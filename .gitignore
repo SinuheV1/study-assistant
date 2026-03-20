@@ -1,6 +1,48 @@
-venv/
+# Python
 __pycache__/
 *.pyc
-.env
+*.pyo
+*.pyd
+*.so
+
+# Virtual environment
+venv/
+.env/
+.venv/
+
+# direnv
+.direnv/
+.envrc
+
+
+# MacOS
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs & artifacts
+artifacts/logs/
+artifacts/debug_outputs/
+
+# Data (IMPORTANT)
+data/raw/
+data/processed/
+data/eval/
+
+# Vector DB
 vector_store/
-data/
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.log
+
+#adding for now
+requirements-lock.txt
