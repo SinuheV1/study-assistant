@@ -7,7 +7,6 @@ __pycache__/
 
 # Virtual environment
 venv/
-.env/
 .venv/
 
 # direnv
@@ -25,13 +24,10 @@ venv/
 artifacts/logs/
 artifacts/debug_outputs/
 
-# Data (IMPORTANT)
+# Data
 data/raw/
 data/processed/
 data/eval/
-
-# Vector DB
-vector_store/
 
 # Environment variables
 .env
@@ -42,7 +38,6 @@ vector_store/
 
 # Temporary files
 *.tmp
-*.log
 
 #adding for now
 requirements-lock.txt
