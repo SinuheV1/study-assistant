@@ -29,6 +29,9 @@ data/raw/
 data/processed/
 data/eval/
 
+#docs
+docs/
+
 # Environment variables
 .env
 
