@@ -109,3 +109,9 @@ def reset_collection(client,collection_name):
     log.info(f'New collection created: {collection_name}')
     return new_collection
     
+def delete_by_document_id(collection, document_id):
+    try:
+        collection.delete(where={"document_id": document_id})
+        log.info(f"Deleted records for document_id: {document_id}")
+    except Exception as e:
+        log.warning(f"Failed to delete records: {e}")
