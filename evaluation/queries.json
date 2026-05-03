@@ -1,0 +1,74 @@
+{
+  "queries": [
+    {
+      "id": "q1",
+      "query": "What is machine learning?",
+      "expected_keywords": ["data", "input", "output", "predictions", "patterns"]
+    },
+    {
+      "id": "q2",
+      "query": "What are common applications of machine learning?",
+      "expected_keywords": ["neuroscience", "self-driving", "finance", "weather", "robots"]
+    },
+    {
+      "id": "q3",
+      "query": "What is clustering in machine learning?",
+      "expected_keywords": ["similarities", "groups", "patterns", "unsupervised"]
+    },
+    {
+      "id": "q4",
+      "query": "What is supervised learning?",
+      "expected_keywords": ["labels", "training data", "classification"]
+    },
+    {
+      "id": "q5",
+      "query": "What is unsupervised learning?",
+      "expected_keywords": ["no labels", "patterns", "clustering"]
+    },
+    {
+      "id": "q6",
+      "query": "What is anomaly or novelty detection?",
+      "expected_keywords": ["abnormal", "new data", "not seen before"]
+    },
+    {
+      "id": "q7",
+      "query": "What is image classification?",
+      "expected_keywords": ["labels", "ImageNet", "supervised"]
+    },
+    {
+      "id": "q8",
+      "query": "What is feature selection?",
+      "expected_keywords": ["important features", "variables", "dimensions"]
+    },
+    {
+      "id": "q9",
+      "query": "What is spam filtering in machine learning?",
+      "expected_keywords": ["classification", "email", "spam", "supervised"]
+    },
+    {
+      "id": "q10",
+      "query": "What is linear regression used for?",
+      "expected_keywords": ["prediction", "price", "features", "model"]
+    },
+    {
+      "id": "q11",
+      "query": "What assumptions are made in linear regression?",
+      "expected_keywords": ["linear", "error", "gaussian", "variance"]
+    },
+    {
+      "id": "q12",
+      "query": "What is least squares in linear regression?",
+      "expected_keywords": ["minimize error", "squared", "optimization"]
+    },
+    {
+      "id": "q13",
+      "query": "Why is gradient descent used instead of matrix inversion?",
+      "expected_keywords": ["computational", "expensive", "large matrix"]
+    },
+    {
+      "id": "q14",
+      "query": "What prerequisites are needed for this course?",
+      "expected_keywords": ["probability", "linear algebra", "statistics", "programming"]
+    }
+  ]
+}
