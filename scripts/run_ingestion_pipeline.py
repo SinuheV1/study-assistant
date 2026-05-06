@@ -12,8 +12,8 @@ log = setup_logger(__name__)
 #Config Variables
 file_path = 'data/raw/lecture_pdfs/Lecture_01.pdf'
 parser = 'docling'
-target_size = 700
-overlap_size = 50
+target_size = 900
+overlap_size = 75
 embedding_model = 'all-MiniLM-L6-v2'
 persist_dir = 'data/processed/vector_store'
 collection_name = 'study_assistant_chunks'
