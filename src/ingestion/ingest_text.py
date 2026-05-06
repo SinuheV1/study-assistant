@@ -117,7 +117,7 @@ def build_document_metadata(file_path):
     'file_size': file_size}
     
     return metadata
-def main(file_path):
+def ingest_text_document(file_path):
     log.info(f'Starting ingestion for file: {file_path}')
     file_type = detect_text_file_type(file_path)
     if file_type is None:
@@ -140,20 +140,3 @@ def main(file_path):
             'raw_text': text_content,
             'cleaned_text':cleaned_text,
             'metadata': metadata}
-    
-if __name__ == '__main__':
-    file_path = '/Users/sinuhevillegas/Projects/study-assistant/data/raw/lecture_transcripts/example_ingestion_test_messy.txt'
-    result = main(file_path)
-
-    if result is not None:
-        print('\n=== INGESTION RESULT ===')
-        print(f'file_type: {result['file_type']}')
-        print(f'text length: {len(result['cleaned_text'])}')
-        print(f'metadata: {result['metadata']}')
-        print()
-        print('\n === RAW TEXT ===')
-        print(result['raw_text'])
-        print()
-        print('=== CLEANED TEXT ===')
-        print(result['cleaned_text'])
-        
