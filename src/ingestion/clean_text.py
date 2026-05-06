@@ -38,8 +38,8 @@ def fix_broken_line_wraps(text: str) -> str:
             if token.endswith(".") and token[:-1].isdigit():
                 return True
 
-        return False
-    1
+        return False    
+    
     for line in lines:
         stripped=line.strip()
         #blank line = paragraph/list boundary
