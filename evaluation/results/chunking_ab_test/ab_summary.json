@@ -1,0 +1,50 @@
+{
+  "experiment_name": "chunking_ab_test",
+  "file_path": "data/raw/lecture_pdfs/Lecture_01.pdf",
+  "embedding_model": "all-MiniLM-L6-v2",
+  "llm_model": "llama3.2:3b",
+  "top_k": 3,
+  "run_generation": true,
+  "results": [
+    {
+      "config_name": "A_700_50",
+      "target_size": 700,
+      "overlap_size": 50,
+      "chunk_count": 94,
+      "embedding_count": 94,
+      "vector_db_count": 94,
+      "avg_retrieval_score": 0.6666666666666667,
+      "avg_generation_score": 0.5333333333333333
+    },
+    {
+      "config_name": "B_900_75",
+      "target_size": 900,
+      "overlap_size": 75,
+      "chunk_count": 71,
+      "embedding_count": 71,
+      "vector_db_count": 71,
+      "avg_retrieval_score": 0.7857142857142857,
+      "avg_generation_score": 0.6166666666666666
+    }
+  ],
+  "winner_by_retrieval": {
+    "config_name": "B_900_75",
+    "target_size": 900,
+    "overlap_size": 75,
+    "chunk_count": 71,
+    "embedding_count": 71,
+    "vector_db_count": 71,
+    "avg_retrieval_score": 0.7857142857142857,
+    "avg_generation_score": 0.6166666666666666
+  },
+  "winner_by_generation": {
+    "config_name": "B_900_75",
+    "target_size": 900,
+    "overlap_size": 75,
+    "chunk_count": 71,
+    "embedding_count": 71,
+    "vector_db_count": 71,
+    "avg_retrieval_score": 0.7857142857142857,
+    "avg_generation_score": 0.6166666666666666
+  }
+}
