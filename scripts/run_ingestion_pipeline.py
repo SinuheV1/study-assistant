@@ -1,7 +1,9 @@
+import argparse
 from pathlib import Path
 from src.utils.logging import setup_logger
 from src.utils.io import save_extracted_text,save_json
 from src.ingestion.ingest_docling_document import ingest_docling_document
+from src.ingestion.ingest_text import ingest_text_document
 from src.chunking.chunker import chunk_document
 from src.embedding.embedder import embed_chunks
 from src.vector_store.vectordb import (initialize_vector_db,get_or_create_collection,add_records_to_collection,
@@ -10,7 +12,7 @@ from src.vector_store.vectordb import (initialize_vector_db,get_or_create_collec
 
 log = setup_logger(__name__)
 #Config Variables
-file_path = 'data/raw/lecture_pdfs/Lecture_01.pdf'
+
 parser = 'docling'
 target_size = 900
 overlap_size = 75
@@ -22,10 +24,28 @@ chunks_dir = 'data/processed/chunks'
 embeddings_dir = 'data/processed/embeddings'
 
 
-def run_ingestion_pipeline():
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run ingestion pipeline.")
+    parser.add_argument(
+        "--file",
+        "-f",
+        required=True,
+        help="Path to the file to ingest (.pdf, .txt, .md)")
+    return parser.parse_args()
+
+def run_ingestion_pipeline(file_path):
     
     log.info(f'Starting Ingestion Pipeline.')
-    document=ingest_docling_document(file_path)
+    
+    file_path=str(file_path)
+    if file_path.endswith(".pdf"):
+        document = ingest_docling_document(file_path)
+    elif file_path.endswith(".txt"):
+        document = ingest_text_document(file_path)
+    elif file_path.endswith(".md"):
+        document = ingest_text_document(file_path)
+    else:
+        raise ValueError("Unsupported file type")
     if document is None:
         log.warning(f'Document returned None.')
         return None
@@ -68,4 +88,5 @@ def run_ingestion_pipeline():
     
     
 if __name__ == '__main__':
-    run_ingestion_pipeline()
+    args = parse_args()
+    run_ingestion_pipeline(args.file)
