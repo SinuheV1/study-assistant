@@ -13,10 +13,11 @@ This project implements an end-to-end RAG pipeline that:
 - Cleans and normalizes extracted text
 - Chunks documents into semantically meaningful segments
 - Generates embeddings for vector similarity search
-- Retrieves relevant context for user queries
+- Retrieves relevant context with metadata-aware source tracing
 - Generates grounded answers using a local LLM (Ollama)
 - Evaluates retrieval and generation quality
 - Optimizes chunking strategies through A/B testing
+- Supports CLI-based querying and retrieval debugging
 
 ---
 
@@ -73,6 +74,7 @@ study-assistant/
 │
 ├── scripts/
 │   ├── run_ingestion_pipeline.py
+│   ├── run_query_pipeline.py
 │   ├── evaluate_rag.py
 │   └── run_chunking_ab_test.py
 │
@@ -97,6 +99,14 @@ Run ingestion from the command line:
 
 ```bash
 python -m scripts.run_ingestion_pipeline -f data/raw/lecture_pdfs/Lecture_01.pdf
+```
+
+Reset and rebuild collection:
+
+```bash
+python -m scripts.run_ingestion_pipeline \
+-f data/raw/lecture_pdfs/Lecture_01.pdf \
+--reset-collection
 ```
 
 Supported file types:
@@ -128,6 +138,68 @@ Generate Answer with Ollama
     ↓
 Return Answer + Sources
 ```
+
+---
+
+## 💬 Query Pipeline
+
+Run interactive query retrieval and generation:
+
+```bash
+python -m scripts.run_query_pipeline \
+-q "What is supervised learning?"
+```
+
+### Retrieval-Only Debugging
+
+```bash
+python -m scripts.run_query_pipeline \
+-q "What is supervised learning?" \
+--no-generate \
+--show-context
+```
+
+### Available CLI Options
+
+| Option | Purpose |
+|---|---|
+| `--top-k` | Control retrieval depth |
+| `--show-sources` | Print retrieved chunk previews |
+| `--show-context` | Print full retrieved chunks |
+| `--no-generate` | Disable LLM generation |
+| `--model` | Specify Ollama model |
+| `--embedding-model` | Specify embedding model |
+| `--collection` | Select Chroma collection |
+| `--persist-dir` | Override vector DB location |
+
+### Retrieval Debugging Modes
+
+#### Source Preview Mode
+
+```bash
+--show-sources
+```
+
+Displays:
+
+- similarity score
+- chunk ID
+- source metadata
+- short preview text
+
+#### Full Context Mode
+
+```bash
+--show-context
+```
+
+Displays:
+
+- full retrieved chunk text
+- metadata
+- ranking information
+
+This enables detailed retrieval debugging and chunk quality inspection.
 
 ---
 
@@ -199,6 +271,9 @@ Key findings:
 - Evaluation is critical — naive RAG demos can be misleading
 - Larger chunks improved conceptual question answering in this corpus
 - Standardized document objects simplify multi-format ingestion
+- Retrieval debugging tools significantly improve observability
+- Top-k retrieval depth materially impacts answer grounding quality
+- Transcript-style text introduces semantic noise and OCR artifacts
 
 ---
 
@@ -217,10 +292,13 @@ Key findings:
 - Hybrid retrieval (BM25 + vector search)
 - Query rewriting / expansion
 - Multi-document retrieval
+- Retrieval reranking
+- Metadata filtering
+- Folder-level ingestion
+- Better OCR/transcript cleanup
 - Latency optimization
 - FastAPI inference layer
 - Streamlit or web UI
-- Retrieval reranking
 
 ---
 
@@ -250,13 +328,20 @@ ollama pull llama3.2:3b
 python -m scripts.run_ingestion_pipeline -f data/raw/lecture_pdfs/Lecture_01.pdf
 ```
 
-### 5. Run evaluation
+### 5. Run query pipeline
+
+```bash
+python -m scripts.run_query_pipeline \
+-q "What is supervised learning?"
+```
+
+### 6. Run evaluation
 
 ```bash
 python -m scripts.evaluate_rag
 ```
 
-### 6. Run chunking A/B tests
+### 7. Run chunking A/B tests
 
 ```bash
 python -m scripts.run_chunking_ab_test
@@ -274,11 +359,12 @@ This project goes beyond a simple chatbot:
 - Measurable retrieval optimization
 - Local LLM deployment
 - Retrieval experimentation via A/B testing
+- Retrieval debugging and observability tooling
+- Metadata-aware retrieval workflows
 
 ---
 
 ## 📌 Summary
 
 ```text
-Built a local-first RAG system with evaluation and chunking A/B testing, improving retrieval performance from 0.60 → 0.79 through chunking optimization.
-```
+Built a local-first RAG system with ingestion, retrieval, gener
