@@ -309,6 +309,7 @@ def create_chunk_metadata(document_metadata: dict,chunk_text: str,chunk_index: i
         "source_type": document_metadata["source_type"],
         "course": document_metadata["course"],
         "title": document_metadata["title"],
+        "file_name": document_metadata.get("file_name"),
         "file_path": document_metadata["file_path"],
         "chunk_text_length": len(chunk_text)}
 
