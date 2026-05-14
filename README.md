@@ -13,6 +13,7 @@ This project implements an end-to-end RAG pipeline that:
 - Cleans and normalizes extracted text
 - Chunks documents into semantically meaningful segments
 - Generates embeddings for vector similarity search
+- Supports section-aware metadata retrieval and debugging
 - Retrieves relevant context with metadata-aware source tracing
 - Generates grounded answers using a local LLM (Ollama)
 - Evaluates retrieval and generation quality
@@ -184,7 +185,10 @@ Displays:
 
 - similarity score
 - chunk ID
-- source metadata
+- course
+- file name
+- source type
+- semantic section metadata
 - short preview text
 
 #### Full Context Mode
@@ -196,7 +200,7 @@ Displays:
 Displays:
 
 - full retrieved chunk text
-- metadata
+- section-aware metadata
 - ranking information
 
 This enables detailed retrieval debugging and chunk quality inspection.
@@ -274,6 +278,7 @@ Key findings:
 - Retrieval debugging tools significantly improve observability
 - Top-k retrieval depth materially impacts answer grounding quality
 - Transcript-style text introduces semantic noise and OCR artifacts
+- Semantic section metadata improves retrieval traceability and debugging
 
 ---
 
@@ -288,7 +293,8 @@ Key findings:
 
 ## 🚧 Future Improvements
 
-- Structure-aware chunking (heading-based)
+- Improve heading detection heuristics
+- Section-aware reranking
 - Hybrid retrieval (BM25 + vector search)
 - Query rewriting / expansion
 - Multi-document retrieval

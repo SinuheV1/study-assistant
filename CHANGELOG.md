@@ -113,3 +113,62 @@ Results:
 - Retrieval debugging tools significantly improve observability
 - Transcript-style text introduces semantic retrieval noise
 - Top-k retrieval depth materially impacts answer grounding quality
+
+---
+
+# 2026-05-14
+
+## Added
+
+### Section-Aware Metadata
+- Added section-aware chunk metadata
+- Added 'section' and 'sections' metadata fields
+- Added semantic section propogation during chunk construction
+- Added normalized heading extraction for section tracking
+
+### Query Output Improvements
+- Added Course metadata to retrieval debugging output
+- Added Section metadata to retrieval debugging output
+- Added multi-section visibility via 'sections'
+
+### Retrieval Observability
+- Improved source traceability across:
+  - course
+  - source type
+  - file name
+  - semantic section
+  - chunk ID
+
+---
+
+## Changed
+
+### Chunking Architecture
+- Refactored chunk builder to return structured chunk objects instead of plain text strings
+- Added section-aware chunk construction workflow
+- Improved heading attachment handling during chunk assembly
+
+---
+
+## Validated
+
+- Confirmed section metadata propogates correctly into:
+  - chunk records
+  - embeddings
+  - Chroma metadata
+  - retrieval outputs
+
+- Successfully re-ingested and retrieved:
+  - course metadata
+  - section metadata
+  - source metadata
+
+---
+
+## Known Issues
+
+- 'is_heading()' currently over-detects some OCR/image artifacts:
+  - '<!-- image -->'
+  - malformed OCR text
+- Retrieval quality still impaacted by transcript/PDF extraction noise
+
