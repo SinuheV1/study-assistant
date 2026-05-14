@@ -7,7 +7,7 @@ from src.ingestion.ingest_text import ingest_text_document
 from src.chunking.chunker import chunk_document
 from src.embedding.embedder import embed_chunks
 from src.vector_store.vectordb import (initialize_vector_db,get_or_create_collection,add_records_to_collection,
-    get_collection_count)
+    get_collection_count,reset_collection)
 
 
 log = setup_logger(__name__)
@@ -31,9 +31,13 @@ def parse_args():
         "-f",
         required=True,
         help="Path to the file to ingest (.pdf, .txt, .md)")
+    parser.add_argument(
+        '--reset-collection',
+        action='store_true',
+        help='Reset the Chroma collection before ingestion. ')
     return parser.parse_args()
 
-def run_ingestion_pipeline(file_path):
+def run_ingestion_pipeline(file_path,reset=False):
     
     log.info(f'Starting Ingestion Pipeline.')
     
@@ -71,7 +75,10 @@ def run_ingestion_pipeline(file_path):
     save_json(embedded_chunks,Path(embeddings_dir) / f'{document_id}_embeddings.json')
     
     client=initialize_vector_db(persist_dir)
-    collection = get_or_create_collection(client,collection_name)
+    if reset:
+        collection=reset_collection(client,collection_name)
+    else:
+        collection = get_or_create_collection(client,collection_name)
     
     add_records_to_collection(collection,embedded_chunks)
     
@@ -89,4 +96,4 @@ def run_ingestion_pipeline(file_path):
     
 if __name__ == '__main__':
     args = parse_args()
-    run_ingestion_pipeline(args.file)
+    run_ingestion_pipeline(file_path=args.file,reset=args.reset_collection)
