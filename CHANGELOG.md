@@ -172,3 +172,60 @@ Results:
   - malformed OCR text
 - Retrieval quality still impaacted by transcript/PDF extraction noise
 
+---
+
+# 2026-05-19
+
+## Added
+
+### Heading Detection Improvements
+- Improved `is_heading()` heuristics for semantic section detection
+- Added markdown heading prioritization
+- Added OCR artifact rejection heuristics
+- Added merged-token OCR detection
+- Added sentence punctuation rejection for headings
+- Added list-item rejection for heading detection
+- Added heading normalization cleanup
+
+---
+
+## Changed
+
+### Chunking & Section Metadata
+- Improved section-aware chunk metadata quality
+- Reduced false-positive section assignments from OCR artifacts
+- Improved semantic section propagation during chunk construction
+
+### Retrieval Debugging
+- Retrieval output now surfaces cleaner section metadata
+- Improved retrieval observability for multi-section chunks
+
+---
+
+## Fixed
+
+- Fixed OCR artifacts incorrectly becoming semantic sections:
+  - `Whatarethedesired`
+  - `<!-- image -->`
+
+- Fixed heading regex matching behavior
+- Fixed false-positive heading detection from malformed transcript text
+
+---
+
+## Known Issues
+
+- Some chunks still span multiple semantic sections
+- Primary section assignment currently favors most recent section in chunk
+- Transcript/PDF extraction noise still impacts chunk cleanliness
+
+---
+
+## Learned
+
+- Retrieval quality is highly sensitive to heading detection heuristics
+- OCR/transcript cleanup materially affects semantic chunk quality
+- Structure-aware chunking introduces new retrieval engineering challenges
+- Semantic metadata improves retrieval debugging and observability
+
+---

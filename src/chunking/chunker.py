@@ -7,7 +7,16 @@ import json
 
 
 log = setup_logger(__name__)
-
+def _weird_capitalization(text:str) -> str:
+    #checking for any lowercase character followed by uppercase
+    if re.search(r'[a-z][A-Z]',text):
+        return True
+    #split words and check if end in lowercase but contains uppercase
+    for word in text.split():
+        if any(c.isupper() for c in word[1:]) and not word.isupper():
+            return True
+    return False
+    
 def split_into_blocks(text:str) ->list[str]:
     """
     Split cleaned text into logical blocks using double newlines as separators.
@@ -50,14 +59,19 @@ def is_heading(block:str) ->bool:
 
     if not stripped_block:
         return False
-
+    if re.search(r'<!--',stripped_block):
+        return False
+    if not re.search(r'\s', stripped_block) and _weird_capitalization(stripped_block):
+        return False
+    if not re.search(r'\s',stripped_block) and len(stripped_block) > 15:
+        return False
+    if re.search(r'^#{1,6}\s',stripped_block):
+        return True
     list_pattern = r"^\d+[\.\)]\s+|^[-*]\s+"
     if re.match(list_pattern, stripped_block):
         return False
-
     if len(stripped_block) > 75:
         return False
-
     if stripped_block.endswith((".", "?", "!", ";", ":")):
         return False
 
