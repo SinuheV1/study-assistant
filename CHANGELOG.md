@@ -229,3 +229,69 @@ Results:
 - Semantic metadata improves retrieval debugging and observability
 
 ---
+
+# 2026-05-20
+
+## Added
+
+### Text Cleaning Pipeline
+- Added deterministic text preprocessing pipeline in `clean_text.py`
+- Added HTML comment cleanup
+- Added image artifact removal
+- Added markdown heading normalization
+- Added whitespace normalization
+- Added trailing whitespace cleanup
+- Added wrapped-line reconstruction for OCR/transcript exports
+- Added short noise-line filtering
+- Added OCR merged-token detection heuristics
+- Added cleaning statistics logging
+
+---
+
+## Changed
+
+### Ingestion Quality
+- Improved extracted text cleanliness before chunking
+- Reduced OCR artifact propagation into chunks
+- Improved semantic chunk readability
+- Improved section metadata quality after preprocessing
+
+### Retrieval Quality
+- Improved retrieval context readability
+- Reduced retrieval noise from malformed OCR text
+- Improved retrieval observability during evaluation
+
+---
+
+## Fixed
+
+- Fixed markdown heading normalization behavior
+- Fixed HTML comment cleanup regex
+- Fixed artifact leakage into retrieval chunks
+- Fixed malformed OCR headings affecting chunk metadata
+
+---
+
+## Evaluation
+
+### Post-cleaning Evaluation Results
+| Metric | Score |
+|---|---|
+| Avg Retrieval Score | 0.78 |
+| Avg Generation Score | 0.62 |
+
+Notes:
+- Retrieval quality became noticeably cleaner and more interpretable
+- OCR artifacts were substantially reduced
+- Retrieval bottleneck is shifting from preprocessing toward ranking quality
+
+---
+
+## Learned
+
+- Corpus cleanliness strongly impacts retrieval quality
+- Deterministic preprocessing improves observability and debugging
+- OCR artifacts degrade semantic chunk quality
+- Retrieval evaluation should combine quantitative scores with qualitative inspection
+
+---
