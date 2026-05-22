@@ -295,3 +295,55 @@ Notes:
 - Retrieval evaluation should combine quantitative scores with qualitative inspection
 
 ---
+
+# 2026-05-21
+
+## Added
+
+### Reranking Pipeline
+- Added optional cross-encoder reranking pipeline
+- Added `src/reranking/reranker.py`
+- Added support for:
+  - `--use-reranker`
+  - `--reranker-model`
+  - `--candidate-k`
+- Added local reranker support using:
+  - `cross-encoder/ms-marco-MiniLM-L-6-v2`
+- Added reranker-aware retrieval debugging metadata:
+  - dense_rank
+  - dense_similarity
+  - rerank_score
+
+---
+
+### Evaluation Improvements
+- Expanded `evaluate_rag.py` to compare:
+  - dense retrieval baseline
+  - dense + reranker pipeline
+- Added reranker evaluation metrics:
+  - retrieval deltas
+  - generation deltas
+  - top-result change tracking
+- Added side-by-side retrieval pipeline benchmarking
+
+---
+
+## Changed
+
+### Query Pipeline
+- Updated query pipeline to support two-stage retrieval:
+  ```text
+  dense retrieval → reranking → generation
+
+## Learned 
+
+- Cross-encoder rerankers can substantially reorder dense retrieval results
+- Improved retrieval ranking does not necessarily improve downstream generation quality
+- Retrieval evaluation requires both quantitative metrics and qualitative chunk inspection
+- Chunk contamination and semantic boundary overlap still impact retrieval precision
+- Retrieval bottlenecks have shifted from OCR/text-cleaning issues toward semantic chunk quality
+- Dense retrieval and reranking optimize different aspects of retrieval quality:
+  - dense retrieval improves recall
+  - reranking improves ranking precision
+- Observability tooling (dense rank, rerank score, retrieval previews) is critical for debugging RAG systems
+- Optional/feature-flagged experimentation enables safe iterative development of retrieval pipelines

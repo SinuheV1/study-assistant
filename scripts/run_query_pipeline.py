@@ -3,6 +3,8 @@ from src.utils.logging import setup_logger
 from src.vector_store.vectordb import initialize_vector_db, get_or_create_collection
 from src.retrieval.retriever import retrieve_relevant_chunks
 from src.generation.generator import generate_answer
+from src.reranking.reranker import rerank_results
+
 
 
 log = setup_logger(__name__)
@@ -61,6 +63,19 @@ def parse_args():
         type=int,
         default=300,
         help='Controls how much chunk text is printed. ')
+    parser.add_argument(
+        '--use-reranker',
+        action='store_true',
+        help='Flag to turn reranker on/off')
+    parser.add_argument(
+        '--reranker-model',
+        default='cross-encoder/ms-marco-MiniLM-L-6-v2',
+        help='Flag to choose reranker model')
+    parser.add_argument(
+        '--candidate-k',
+        type=int,
+        default=12,
+        help='Flag to specify how many dense candidates to retrieve before reranking.')
     return parser.parse_args()
 
 def load_vector_collection(persist_dir,collection_name):
@@ -94,6 +109,9 @@ def print_sources(results,preview_chars):
         file_name=metadata.get('file_name')
         source_type=metadata.get('source_type')
         section=metadata.get('section')
+        dense_rank = result.get('dense_rank')
+        dense_similarity = result.get('dense_similarity')
+        rerank_score = result.get('rerank_score')
         
         print('='*80)
         print(f'File: {file_name}')
@@ -104,6 +122,10 @@ def print_sources(results,preview_chars):
         print(f'Chunk ID: {chunk_id}')
         print(f'Similarity: {similarity}')
         print(f'Rank: {rank}')
+        if rerank_score is not None:
+            print(f'Dense Rank: {dense_rank}')
+            print(f'Dense Similarity: {dense_similarity}')
+            print(f'Rerank Score: {rerank_score:.4f}')
         
         print('\nPreview:')
         print(chunk_text[:preview_chars])
@@ -122,6 +144,9 @@ def print_context(results):
         source_type=metadata.get('source_type')
         section=metadata.get('section')
         sections=metadata.get('sections')
+        dense_rank = result.get('dense_rank')
+        dense_similarity = result.get('dense_similarity')
+        rerank_score = result.get('rerank_score')
         
         print('='*80)
         print(f'Chunk Rank: {rank}')
@@ -133,7 +158,11 @@ def print_context(results):
         print(f'Similarity: {similarity}')
         print(f'Section: {section}')
         print(f'Sections: {sections}')
-        
+        if rerank_score is not None:
+            print(f'Dense Rank: {dense_rank}')
+            print(f'Dense Similarity: {dense_similarity}')
+            print(f'Rerank Score: {rerank_score:.4f}')
+
         print('\nFull Context:\n')
         print(chunk_text)
         print()
@@ -143,22 +172,34 @@ def run_query_pipeline(args):
     collection=load_vector_collection(
         args.persist_dir,
         args.collection)
-    results=run_retrieval(
+    if args.use_reranker:
+        retrieval_k=args.candidate_k
+    else:
+        retrieval_k=args.top_k
+    dense_results=run_retrieval(
         query=args.query,
         collection=collection,
         embedding_model=args.embedding_model,
-        top_k=args.top_k)
-    if validate_retrieval_results(results) is False:
+        top_k=retrieval_k)
+    if validate_retrieval_results(dense_results) is False:
         return None
+    if args.use_reranker:
+        final_results=rerank_results(
+            query=args.query,
+            retrieved_results=dense_results,
+            model_name=args.reranker_model,
+            top_k=args.top_k)
+    else:
+        final_results=dense_results
     if args.show_context:
-        print_context(results)
+        print_context(final_results)
     elif args.show_sources:
-        print_sources(results,args.preview_chars)          
+        print_sources(final_results,args.preview_chars)          
     if args.no_generate:
-        return results
+        return final_results
     answer=generate_answer(
         query=args.query,
-        retrieved_results=results,
+        retrieved_results=final_results,
         model_name=args.model)
     print('\n=== ANSWER ====')
     print(answer)

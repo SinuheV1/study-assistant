@@ -36,9 +36,19 @@ PDF / TXT / MD
         ↓
     Embeddings
         ↓
- Chroma Vector DB
+    Chroma Vector DB
         ↓
-User Query → Retrieval → Context Builder → LLM → Answer + Sources
+    User Query
+        ↓
+    Dense Retrieval
+        ↓
+    Optional Cross-Encoder Reranking
+        ↓
+    Context Builder
+        ↓
+    LLM Generation
+        ↓
+    Answer + Sources
 ```
 
 ---
@@ -69,6 +79,7 @@ study-assistant/
 │   ├── chunking/
 │   ├── embedding/
 │   ├── retrieval/
+│   ├── reranking/
 │   ├── generation/
 │   ├── vector_store/
 │   └── utils/
@@ -131,7 +142,11 @@ User Query
     ↓
 Embed Query
     ↓
-Retrieve Top-K Chunks
+Retrieve Candidate Chunks
+    ↓
+Optional Cross-Encoder Reranking
+    ↓
+Select Final Top-K Chunks
     ↓
 Build Context Block
     ↓
@@ -160,6 +175,16 @@ python -m scripts.run_query_pipeline \
 --show-context
 ```
 
+### Optional Reranking
+
+```bash
+python -m scripts.run_query_pipeline \
+-q "What is supervised learning?" \
+--use-reranker \
+--candidate-k 8 \
+--show-sources
+```
+
 ### Available CLI Options
 
 | Option | Purpose |
@@ -172,6 +197,9 @@ python -m scripts.run_query_pipeline \
 | `--embedding-model` | Specify embedding model |
 | `--collection` | Select Chroma collection |
 | `--persist-dir` | Override vector DB location |
+| `--use-reranker` | Enable cross-encoder reranking |
+| `--candidate-k` | Number of dense retrieval candidates before reranking |
+| `--reranker-model` | Specify reranker model |
 
 ### Retrieval Debugging Modes
 
@@ -190,6 +218,9 @@ Displays:
 - source type
 - semantic section metadata
 - short preview text
+- dense retrieval rank
+- rerank score
+- reranked final rank
 
 #### Full Context Mode
 
@@ -202,12 +233,31 @@ Displays:
 - full retrieved chunk text
 - section-aware metadata
 - ranking information
+- dense retrieval rank
+- rerank score
+- reranked final rank
 
 This enables detailed retrieval debugging and chunk quality inspection.
 
 ---
 
 ## 📊 Evaluation Framework
+
+The project supports retrieval experimentation through:
+- chunking A/B testing
+- reranker comparisons
+- retrieval debugging
+- metadata-aware retrieval inspection
+- qualitative + quantitative evaluation
+
+Dense Retrieval Baseline
+        vs
+Dense Retrieval + Cross-Encoder Reranking
+
+- retrieval score
+- generation score
+- reranking deltas
+- top-result ranking changes
 
 Run evaluation:
 
@@ -230,7 +280,18 @@ Metrics measured:
 - Average generation score
 
 ---
+### Current Evaluation Results
 
+| Pipeline | Retrieval | Generation |
+|---|---|---|
+| Dense Baseline | 0.78 | 0.68 |
+| Dense + Reranker | 0.78 | 0.66 |
+
+Observations:
+- Reranker changed top-ranked chunks in 8/14 queries
+- No measurable improvement yet on keyword-based evaluation metrics
+- Current retrieval bottleneck appears to be semantic chunk precision rather than ranking quality
+---
 ## 🧪 Chunking A/B Testing
 
 Run A/B testing:
@@ -268,6 +329,25 @@ Key findings:
 
 ---
 
+## Text Cleaning Pipeline
+
+The ingestion pipeline performs deterministic preprocessing to improve retrieval quality:
+
+- HTML artifact removal
+- OCR noise filtering
+- image placeholder cleanup
+- markdown normalization
+- whitespace normalization
+- wrapped-line reconstruction
+
+Benefits:
+
+- cleaner semantic chunks
+- improved retrieval observability
+- reduced OCR contamination
+- better section metadata quality
+
+---
 ## 📈 Key Learnings
 
 - Chunking strategy significantly impacts retrieval quality
@@ -279,7 +359,9 @@ Key findings:
 - Top-k retrieval depth materially impacts answer grounding quality
 - Transcript-style text introduces semantic noise and OCR artifacts
 - Semantic section metadata improves retrieval traceability and debugging
-
+- Cross-encoder rerankers can significantly reorder dense retrieval outputs
+- Better retrieval ranking does not always improve downstream generation quality
+- Semantic chunk precision remains a major retrieval bottleneck
 ---
 
 ## 🔒 Local-First Design
@@ -295,10 +377,10 @@ Key findings:
 
 - Improve heading detection heuristics
 - Section-aware reranking
-- Hybrid retrieval (BM25 + vector search)
+- Hybrid retrieval (BM25 + dense)
 - Query rewriting / expansion
 - Multi-document retrieval
-- Retrieval reranking
+- Improved reranking strategies
 - Metadata filtering
 - Folder-level ingestion
 - Better OCR/transcript cleanup
@@ -367,6 +449,7 @@ This project goes beyond a simple chatbot:
 - Retrieval experimentation via A/B testing
 - Retrieval debugging and observability tooling
 - Metadata-aware retrieval workflows
+- Two-stage retrieval pipelines with reranking
 
 ---
 
