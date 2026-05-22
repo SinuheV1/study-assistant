@@ -456,4 +456,15 @@ This project goes beyond a simple chatbot:
 ## 📌 Summary
 
 ```text
-Built a local-first RAG system with ingestion, retrieval, gener
+Built a local-first RAG-based study assistant with:
+- multi-format document ingestion
+- deterministic text cleaning
+- metadata-aware chunking
+- vector retrieval with ChromaDB
+- optional cross-encoder reranking
+- local LLM generation with Ollama
+- retrieval evaluation and A/B testing frameworks
+- retrieval debugging and observability tooling
+
+This project focuses on retrieval systems engineering, experimentation, and evaluation rather than simple chatbot generation workflows.
+```
