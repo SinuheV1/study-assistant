@@ -4,6 +4,8 @@ from src.vector_store.vectordb import initialize_vector_db, get_or_create_collec
 from src.retrieval.retriever import retrieve_relevant_chunks
 from src.generation.generator import generate_answer
 from src.reranking.reranker import rerank_results
+from src.retrieval.hybrid_retrieval import hybrid_retrieve
+from src.retrieval.bm25_retriever import load_chunk_records
 
 
 
@@ -12,6 +14,7 @@ log = setup_logger(__name__)
 
 persist_directory = "data/processed/vector_store"
 collection_name = "study_assistant_chunks"
+chunk_directory='data/processed/chunks'
 embedding_model = "all-MiniLM-L6-v2"
 llm_model = "llama3.2:3b"
 top_k = 4
@@ -76,6 +79,25 @@ def parse_args():
         type=int,
         default=12,
         help='Flag to specify how many dense candidates to retrieve before reranking.')
+    parser.add_argument(
+        '--use-hybrid',
+        action='store_true',
+        help='Flag to use hybrid retrieval.')
+    parser.add_argument(
+        '--bm25-k',
+        type=int,
+        default=8,
+        help='Flag to specify how many bm25 chunks to retrieve before merging.')
+    parser.add_argument(
+        '--dense-k',
+        type=int,
+        default=8,
+        help='Flag to specify how many dense chunks to retrieve before merging.')
+    parser.add_argument(
+        '--hybrid-alpha',
+        type=float,
+        default=.6,
+        help='Weight for dense retrieval in hybrid scoring. Example: 0.6 = 60% dense, 40% BM25.')
     return parser.parse_args()
 
 def load_vector_collection(persist_dir,collection_name):
@@ -112,21 +134,35 @@ def print_sources(results,preview_chars):
         dense_rank = result.get('dense_rank')
         dense_similarity = result.get('dense_similarity')
         rerank_score = result.get('rerank_score')
-        
+        dense_rank = result.get('dense_rank')
+        dense_similarity = result.get('dense_similarity')
+        bm25_rank = result.get('bm25_rank')
+        bm25_score = result.get('bm25_score')
+        hybrid_score = result.get('hybrid_score')
+    
         print('='*80)
+        print(f'Rank: {rank}')
+        if hybrid_score is not None:
+            print(f"Dense Rank: {dense_rank}")
+            print(f"Dense Similarity: {dense_similarity}")
+            print(f"BM25 Rank: {bm25_rank}")
+            print(f"BM25 Score: {bm25_score}")
+            print(f"Hybrid Score: {hybrid_score:.4f}")        
+            if rerank_score is not None:
+                print(f'Rerank Score: {rerank_score:.4f}')    
+        elif rerank_score is not None:
+                print(f'Dense rank: {dense_rank}')
+                print(f'Dense Similarity: {dense_similarity}')
+                print(f'Rerank Score: {rerank_score:.4f}')
+        else:
+            print(f'Similarity: {similarity}')
         print(f'File: {file_name}')
         print(f'Title: {title}')
         print(f'Course: {course}')
         print(f'Source Type: {source_type}')
         print(f'Section: {section}')
         print(f'Chunk ID: {chunk_id}')
-        print(f'Similarity: {similarity}')
-        print(f'Rank: {rank}')
-        if rerank_score is not None:
-            print(f'Dense Rank: {dense_rank}')
-            print(f'Dense Similarity: {dense_similarity}')
-            print(f'Rerank Score: {rerank_score:.4f}')
-        
+
         print('\nPreview:')
         print(chunk_text[:preview_chars])
         print()
@@ -147,21 +183,39 @@ def print_context(results):
         dense_rank = result.get('dense_rank')
         dense_similarity = result.get('dense_similarity')
         rerank_score = result.get('rerank_score')
+        dense_rank = result.get('dense_rank')
+        dense_similarity = result.get('dense_similarity')
+        bm25_rank = result.get('bm25_rank')
+        bm25_score = result.get('bm25_score')
+        hybrid_score = result.get('hybrid_score')
         
-        print('='*80)
-        print(f'Chunk Rank: {rank}')
+        print('=' * 80)
+        print(f'Rank: {rank}')
+
+        if hybrid_score is not None:
+            print(f'Dense Rank: {dense_rank}')
+            print(f'Dense Similarity: {dense_similarity}')
+            print(f'BM25 Rank: {bm25_rank}')
+            print(f'BM25 Score: {bm25_score}')
+            print(f'Hybrid Score: {hybrid_score:.4f}')
+            if rerank_score is not None:
+                print(f'Rerank Score: {rerank_score:.4f}')
+
+        elif rerank_score is not None:
+            print(f'Dense Rank: {dense_rank}')
+            print(f'Dense Similarity: {dense_similarity}')
+            print(f'Rerank Score: {rerank_score:.4f}')
+
+        else:
+            print(f'Similarity: {similarity}')
+
         print(f'Course: {course}')
         print(f'Title: {title}')
         print(f'File Name: {file_name}')
         print(f'Source Type: {source_type}')
-        print(f'Chunk ID: {chunk_id}')
-        print(f'Similarity: {similarity}')
         print(f'Section: {section}')
         print(f'Sections: {sections}')
-        if rerank_score is not None:
-            print(f'Dense Rank: {dense_rank}')
-            print(f'Dense Similarity: {dense_similarity}')
-            print(f'Rerank Score: {rerank_score:.4f}')
+        print(f'Chunk ID: {chunk_id}')
 
         print('\nFull Context:\n')
         print(chunk_text)
@@ -172,35 +226,69 @@ def run_query_pipeline(args):
     collection=load_vector_collection(
         args.persist_dir,
         args.collection)
-    if args.use_reranker:
-        retrieval_k=args.candidate_k
-    else:
-        retrieval_k=args.top_k
-    dense_results=run_retrieval(
-        query=args.query,
-        collection=collection,
-        embedding_model=args.embedding_model,
-        top_k=retrieval_k)
-    if validate_retrieval_results(dense_results) is False:
-        return None
-    if args.use_reranker:
-        final_results=rerank_results(
+    
+    if args.use_hybrid:
+        chunk_records=load_chunk_records(chunk_directory)
+        
+        if args.use_reranker:
+            hybrid_top_k=args.candidate_k
+        else:
+            hybrid_top_k=args.top_k
+            
+        final_results=hybrid_retrieve(query=args.query,
+            collection=collection,
+            chunk_records=chunk_records,
+            embedding_model=args.embedding_model,
+            dense_k=args.dense_k,
+            bm25_k=args.bm25_k,
+            top_k=hybrid_top_k,
+            alpha=args.hybrid_alpha)
+        
+        if args.use_reranker:
+            final_results = rerank_results(
+                query=args.query,
+                retrieved_results=final_results,
+                model_name=args.reranker_model,
+                top_k=args.top_k)
+    elif args.use_reranker:
+        dense_results = run_retrieval(
+            query=args.query,
+            collection=collection,
+            embedding_model=args.embedding_model,
+            top_k=args.candidate_k)
+
+        if validate_retrieval_results(dense_results) is False:
+            return None
+
+        final_results = rerank_results(
             query=args.query,
             retrieved_results=dense_results,
             model_name=args.reranker_model,
             top_k=args.top_k)
+
     else:
-        final_results=dense_results
+        final_results = run_retrieval(
+            query=args.query,
+            collection=collection,
+            embedding_model=args.embedding_model,
+            top_k=args.top_k)
+
+    if validate_retrieval_results(final_results) is False:
+        return None
+
     if args.show_context:
         print_context(final_results)
     elif args.show_sources:
-        print_sources(final_results,args.preview_chars)          
+        print_sources(final_results, args.preview_chars)
+
     if args.no_generate:
         return final_results
-    answer=generate_answer(
+
+    answer = generate_answer(
         query=args.query,
         retrieved_results=final_results,
         model_name=args.model)
+
     print('\n=== ANSWER ====')
     print(answer)
 
