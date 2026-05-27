@@ -347,3 +347,42 @@ Notes:
   - reranking improves ranking precision
 - Observability tooling (dense rank, rerank score, retrieval previews) is critical for debugging RAG systems
 - Optional/feature-flagged experimentation enables safe iterative development of retrieval pipelines
+
+
+# 2026-05-26
+
+## Added
+
+### Hybrid Retrieval
+- Added standalone BM25 retrieval using saved chunk JSON artifacts
+- Added `src/retrieval/bm25_retriever.py`
+- Added `src/retrieval/hybrid_retrieval.py`
+- Added hybrid retrieval pipeline combining:
+  - dense vector retrieval from ChromaDB
+  - BM25 lexical retrieval
+  - score normalization
+  - chunk deduplication by `chunk_id`
+  - weighted hybrid scoring
+- Added hybrid retrieval CLI support:
+  - `--use-hybrid`
+  - `--dense-k`
+  - `--bm25-k`
+  - `--hybrid-alpha`
+- Added support for combining hybrid retrieval with reranking:
+  ```text
+  dense retrieval + BM25 retrieval → hybrid scoring → optional reranking → final top-k
+
+## Learned
+
+-Dense retrieval remains the strongest default for broad semantic questions
+- Hybrid retrieval improves exact technical-term retrieval
+- BM25 is useful for lecture-specific vocabulary, formulas, abbreviations, and section-title queries
+- Hybrid search improved lexical retrieval from 0.96 to 1.00
+- Reranking changes rankings frequently but does not currently improve evaluation scores on this corpus
+- Retrieval modes should remain configurable instead of forcing one strategy globally
+- Grouped evaluation is necessary because semantic and lexical queries stress different retrieval behaviors
+- The best current architecture is:
+  ```text
+  dense retrieval as default
+  hybrid retrieval as optional for exact technical terms
+  reranking as experimental
