@@ -1,38 +1,88 @@
 import json
+
 from src.vector_store.vectordb import initialize_vector_db, get_or_create_collection
 from src.retrieval.retriever import retrieve_relevant_chunks
 from src.generation.generator import generate_answer
 from src.reranking.reranker import rerank_results
-
-persist_directory='data/processed/vector_store'
-collection_name='study_assistant_chunks'
-embed_model='all-MiniLM-L6-v2'
-llm_model='llama3.2:3b'
-top_k=3
-candidate_k=8
-reranker_model='cross-encoder/ms-marco-MiniLM-L-6-v2'
+from src.retrieval.bm25_retriever import load_chunk_records
+from src.retrieval.hybrid_retrieval import hybrid_retrieve
 
 
-def keyword_score(text,keywords):
+persist_directory = "data/processed/vector_store"
+collection_name = "study_assistant_chunks"
+chunk_directory = "data/processed/chunks"
+
+embed_model = "all-MiniLM-L6-v2"
+llm_model = "llama3.2:3b"
+reranker_model = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+top_k = 3
+candidate_k = 8
+
+dense_k = 8
+bm25_k = 8
+hybrid_alpha = 0.6
+
+debug = False
+
+
+def get_query_group(query_id: str) -> str:
+    if query_id.startswith("lexical_"):
+        return "lexical"
+    return "semantic"
+
+
+def keyword_score(text, keywords):
     if not keywords:
-        return 0
-    text=text.lower()
-    hits=sum(1 for kw in keywords if kw.lower() in text)
-    return hits/len(keywords)
+        return 0.0
+
+    text = text.lower()
+    hits = sum(1 for kw in keywords if kw.lower() in text)
+
+    return hits / len(keywords)
+
 
 def score_results(results, keywords):
-    combined_chunks = ' '.join(r['chunk_text'] for r in results)
+    combined_chunks = " ".join(r.get("chunk_text", "") for r in results)
     return keyword_score(combined_chunks, keywords)
 
+
+def safe_average(scores):
+    if not scores:
+        return 0.0
+
+    return sum(scores) / len(scores)
+
+
+def init_score_store():
+    return {
+        "dense_retrieval": [],
+        "dense_generation": [],
+        "reranked_retrieval": [],
+        "reranked_generation": [],
+        "hybrid_retrieval": [],
+        "hybrid_generation": [],
+        "hybrid_reranked_retrieval": [],
+        "hybrid_reranked_generation": [],
+        "dense_reranker_changed_top": 0,
+        "hybrid_changed_top": 0,
+        "hybrid_reranked_changed_top": 0,
+        "query_count": 0,
+    }
+
+
 def print_debug_sources(label, results):
-    print(f'\n=== DEBUG {label} SOURCES ===')
+    print(f"\n=== DEBUG {label} SOURCES ===")
 
     for r in results:
-        metadata = r.get('metadata', {})
+        metadata = r.get("metadata", {})
 
         print(f"Rank: {r.get('rank')}")
         print(f"Dense Rank: {r.get('dense_rank')}")
         print(f"Dense Similarity: {r.get('dense_similarity')}")
+        print(f"BM25 Rank: {r.get('bm25_rank')}")
+        print(f"BM25 Score: {r.get('bm25_score')}")
+        print(f"Hybrid Score: {r.get('hybrid_score')}")
         print(f"Rerank Score: {r.get('rerank_score')}")
         print(f"Document ID: {metadata.get('document_id')}")
         print(f"File: {metadata.get('file_name')}")
@@ -40,97 +90,251 @@ def print_debug_sources(label, results):
         print(f"Section: {metadata.get('section')}")
         print(f"Source Type: {metadata.get('source_type')}")
         print(f"Preview: {r.get('chunk_text', '')[:120]}")
-        print('----')
+        print("----")
+
+
+def update_store(
+    store,
+    dense_r_score,
+    dense_g_score,
+    reranked_r_score,
+    reranked_g_score,
+    hybrid_r_score,
+    hybrid_g_score,
+    hybrid_reranked_r_score,
+    hybrid_reranked_g_score,
+    dense_top_changed,
+    hybrid_top_changed,
+    hybrid_reranked_top_changed,
+):
+    store["dense_retrieval"].append(dense_r_score)
+    store["dense_generation"].append(dense_g_score)
+
+    store["reranked_retrieval"].append(reranked_r_score)
+    store["reranked_generation"].append(reranked_g_score)
+
+    store["hybrid_retrieval"].append(hybrid_r_score)
+    store["hybrid_generation"].append(hybrid_g_score)
+
+    store["hybrid_reranked_retrieval"].append(hybrid_reranked_r_score)
+    store["hybrid_reranked_generation"].append(hybrid_reranked_g_score)
+
+    if dense_top_changed:
+        store["dense_reranker_changed_top"] += 1
+
+    if hybrid_top_changed:
+        store["hybrid_changed_top"] += 1
+
+    if hybrid_reranked_top_changed:
+        store["hybrid_reranked_changed_top"] += 1
+
+    store["query_count"] += 1
+
+
+def print_summary(label, store):
+    dense_avg_retrieval = safe_average(store["dense_retrieval"])
+    dense_avg_generation = safe_average(store["dense_generation"])
+
+    reranked_avg_retrieval = safe_average(store["reranked_retrieval"])
+    reranked_avg_generation = safe_average(store["reranked_generation"])
+
+    hybrid_avg_retrieval = safe_average(store["hybrid_retrieval"])
+    hybrid_avg_generation = safe_average(store["hybrid_generation"])
+
+    hybrid_reranked_avg_retrieval = safe_average(store["hybrid_reranked_retrieval"])
+    hybrid_reranked_avg_generation = safe_average(store["hybrid_reranked_generation"])
+
+    query_count = store["query_count"]
+
+    print(f"\n=== {label.upper()} RESULTS ===")
+
+    print("\nPipeline                    Retrieval   Generation")
+    print("-------------------------------------------------")
+    print(f"Dense Baseline              {dense_avg_retrieval:.2f}        {dense_avg_generation:.2f}")
+    print(f"Dense + Reranker            {reranked_avg_retrieval:.2f}        {reranked_avg_generation:.2f}")
+    print(f"Hybrid                      {hybrid_avg_retrieval:.2f}        {hybrid_avg_generation:.2f}")
+    print(f"Hybrid + Reranker           {hybrid_reranked_avg_retrieval:.2f}        {hybrid_reranked_avg_generation:.2f}")
+
+    print("\nDeltas vs Dense Baseline")
+    print("-------------------------------------------------")
+    print(f"Dense + Reranker Retrieval Delta:      {reranked_avg_retrieval - dense_avg_retrieval:+.2f}")
+    print(f"Dense + Reranker Generation Delta:     {reranked_avg_generation - dense_avg_generation:+.2f}")
+    print(f"Hybrid Retrieval Delta:                {hybrid_avg_retrieval - dense_avg_retrieval:+.2f}")
+    print(f"Hybrid Generation Delta:               {hybrid_avg_generation - dense_avg_generation:+.2f}")
+    print(f"Hybrid + Reranker Retrieval Delta:     {hybrid_reranked_avg_retrieval - dense_avg_retrieval:+.2f}")
+    print(f"Hybrid + Reranker Generation Delta:    {hybrid_reranked_avg_generation - dense_avg_generation:+.2f}")
+
+    print("\nTop Result Changes vs Dense")
+    print("-------------------------------------------------")
+    print(f"Dense + Reranker Changed Top:   {store['dense_reranker_changed_top']}/{query_count}")
+    print(f"Hybrid Changed Top:             {store['hybrid_changed_top']}/{query_count}")
+    print(f"Hybrid + Reranker Changed Top:  {store['hybrid_reranked_changed_top']}/{query_count}")
 
 
 def run_evaluation():
-    with open('evaluation/queries.json') as f:
-        data=json.load(f)
-    queries=data['queries']
-        
-    client=initialize_vector_db(persist_directory)
-    collection=get_or_create_collection(client,collection_name)
-    
-    dense_retrieval_scores = []
-    dense_generation_scores = []
+    with open("evaluation/queries.json") as f:
+        data = json.load(f)
 
-    reranked_retrieval_scores = []
-    reranked_generation_scores = []
+    queries = data["queries"]
 
-    changed_top_result_count = 0
-    
+    client = initialize_vector_db(persist_directory)
+    collection = get_or_create_collection(client, collection_name)
+    chunk_records = load_chunk_records(chunk_directory)
+
+    all_scores = init_score_store()
+    semantic_scores = init_score_store()
+    lexical_scores = init_score_store()
+
     for q in queries:
-        query = q['query']
-        keywords = q['expected_keywords']
+        query_id = q["id"]
+        query = q["query"]
+        keywords = q["expected_keywords"]
+        query_group = get_query_group(query_id)
 
         dense_results = retrieve_relevant_chunks(
             query=query,
             collection=collection,
             model_name=embed_model,
-            top_k=top_k)
+            top_k=top_k,
+        )
 
         dense_r_score = score_results(dense_results, keywords)
         dense_answer = generate_answer(query, dense_results, llm_model)
-        dense_g_score = keyword_score(dense_answer or '', keywords)
-
-        dense_retrieval_scores.append(dense_r_score)
-        dense_generation_scores.append(dense_g_score)
+        dense_g_score = keyword_score(dense_answer or "", keywords)
 
         candidate_results = retrieve_relevant_chunks(
             query=query,
             collection=collection,
             model_name=embed_model,
-            top_k=candidate_k)
+            top_k=candidate_k,
+        )
 
         reranked_results = rerank_results(
             query=query,
             retrieved_results=candidate_results,
             model_name=reranker_model,
-            top_k=top_k)
+            top_k=top_k,
+        )
 
         reranked_r_score = score_results(reranked_results, keywords)
         reranked_answer = generate_answer(query, reranked_results, llm_model)
-        reranked_g_score = keyword_score(reranked_answer or '', keywords)
+        reranked_g_score = keyword_score(reranked_answer or "", keywords)
 
-        reranked_retrieval_scores.append(reranked_r_score)
-        reranked_generation_scores.append(reranked_g_score)
+        hybrid_results = hybrid_retrieve(
+            query=query,
+            collection=collection,
+            chunk_records=chunk_records,
+            embedding_model=embed_model,
+            dense_k=dense_k,
+            bm25_k=bm25_k,
+            top_k=top_k,
+            alpha=hybrid_alpha,
+        )
 
-        dense_top_chunk = dense_results[0].get('chunk_id') if dense_results else None
-        reranked_top_chunk = reranked_results[0].get('chunk_id') if reranked_results else None
+        hybrid_r_score = score_results(hybrid_results, keywords)
+        hybrid_answer = generate_answer(query, hybrid_results, llm_model)
+        hybrid_g_score = keyword_score(hybrid_answer or "", keywords)
 
-        if dense_top_chunk != reranked_top_chunk:
-            changed_top_result_count += 1
+        hybrid_candidates = hybrid_retrieve(
+            query=query,
+            collection=collection,
+            chunk_records=chunk_records,
+            embedding_model=embed_model,
+            dense_k=dense_k,
+            bm25_k=bm25_k,
+            top_k=candidate_k,
+            alpha=hybrid_alpha,
+        )
 
-        print(f'\nQuery: {query}')
-        print(f'Dense Retrieval Score: {dense_r_score:.2f}')
-        print(f'Dense Generation Score: {dense_g_score:.2f}')
-        print(f'Reranked Retrieval Score: {reranked_r_score:.2f}')
-        print(f'Reranked Generation Score: {reranked_g_score:.2f}')
-        print(f'Top Result Changed: {dense_top_chunk != reranked_top_chunk}')
+        hybrid_reranked_results = rerank_results(
+            query=query,
+            retrieved_results=hybrid_candidates,
+            model_name=reranker_model,
+            top_k=top_k,
+        )
 
-        print_debug_sources('DENSE', dense_results)
-        print_debug_sources('RERANKED', reranked_results)
+        hybrid_reranked_r_score = score_results(hybrid_reranked_results, keywords)
+        hybrid_reranked_answer = generate_answer(query, hybrid_reranked_results, llm_model)
+        hybrid_reranked_g_score = keyword_score(hybrid_reranked_answer or "", keywords)
 
-    dense_avg_retrieval = sum(dense_retrieval_scores) / len(dense_retrieval_scores)
-    dense_avg_generation = sum(dense_generation_scores) / len(dense_generation_scores)
+        dense_top_chunk = dense_results[0].get("chunk_id") if dense_results else None
+        reranked_top_chunk = reranked_results[0].get("chunk_id") if reranked_results else None
+        hybrid_top_chunk = hybrid_results[0].get("chunk_id") if hybrid_results else None
+        hybrid_reranked_top_chunk = (
+            hybrid_reranked_results[0].get("chunk_id")
+            if hybrid_reranked_results
+            else None
+        )
 
-    reranked_avg_retrieval = sum(reranked_retrieval_scores) / len(reranked_retrieval_scores)
-    reranked_avg_generation = sum(reranked_generation_scores) / len(reranked_generation_scores)
+        dense_top_changed = dense_top_chunk != reranked_top_chunk
+        hybrid_top_changed = dense_top_chunk != hybrid_top_chunk
+        hybrid_reranked_top_changed = dense_top_chunk != hybrid_reranked_top_chunk
 
-    print('\n=== FINAL RESULTS ===')
+        update_store(
+            all_scores,
+            dense_r_score,
+            dense_g_score,
+            reranked_r_score,
+            reranked_g_score,
+            hybrid_r_score,
+            hybrid_g_score,
+            hybrid_reranked_r_score,
+            hybrid_reranked_g_score,
+            dense_top_changed,
+            hybrid_top_changed,
+            hybrid_reranked_top_changed,
+        )
 
-    print('\n=== DENSE BASELINE ===')
-    print(f'Avg Retrieval Score: {dense_avg_retrieval:.2f}')
-    print(f'Avg Generation Score: {dense_avg_generation:.2f}')
+        if query_group == "lexical":
+            group_store = lexical_scores
+        else:
+            group_store = semantic_scores
 
-    print('\n=== DENSE + RERANKER ===')
-    print(f'Avg Retrieval Score: {reranked_avg_retrieval:.2f}')
-    print(f'Avg Generation Score: {reranked_avg_generation:.2f}')
+        update_store(
+            group_store,
+            dense_r_score,
+            dense_g_score,
+            reranked_r_score,
+            reranked_g_score,
+            hybrid_r_score,
+            hybrid_g_score,
+            hybrid_reranked_r_score,
+            hybrid_reranked_g_score,
+            dense_top_changed,
+            hybrid_top_changed,
+            hybrid_reranked_top_changed,
+        )
 
-    print('\n=== DELTAS ===')
-    print(f'Retrieval Delta: {reranked_avg_retrieval - dense_avg_retrieval:+.2f}')
-    print(f'Generation Delta: {reranked_avg_generation - dense_avg_generation:+.2f}')
-    print(f'Top Result Changed: {changed_top_result_count}/{len(queries)} queries')
+        print(f"\nQuery ID: {query_id}")
+        print(f"Group: {query_group}")
+        print(f"Query: {query}")
+
+        print(f"Dense Retrieval Score: {dense_r_score:.2f}")
+        print(f"Dense Generation Score: {dense_g_score:.2f}")
+
+        print(f"Reranked Retrieval Score: {reranked_r_score:.2f}")
+        print(f"Reranked Generation Score: {reranked_g_score:.2f}")
+
+        print(f"Hybrid Retrieval Score: {hybrid_r_score:.2f}")
+        print(f"Hybrid Generation Score: {hybrid_g_score:.2f}")
+
+        print(f"Hybrid + Reranker Retrieval Score: {hybrid_reranked_r_score:.2f}")
+        print(f"Hybrid + Reranker Generation Score: {hybrid_reranked_g_score:.2f}")
+
+        print(f"Dense + Reranker Top Changed: {dense_top_changed}")
+        print(f"Hybrid Top Changed: {hybrid_top_changed}")
+        print(f"Hybrid + Reranker Top Changed: {hybrid_reranked_top_changed}")
+
+        if debug:
+            print_debug_sources("DENSE", dense_results)
+            print_debug_sources("DENSE + RERANKED", reranked_results)
+            print_debug_sources("HYBRID", hybrid_results)
+            print_debug_sources("HYBRID + RERANKED", hybrid_reranked_results)
+
+    print("\n=== FINAL RESULTS ===")
+    print_summary("All Queries", all_scores)
+    print_summary("Semantic Queries", semantic_scores)
+    print_summary("Lexical / Hybrid Queries", lexical_scores)
 
 
 if __name__ == "__main__":
