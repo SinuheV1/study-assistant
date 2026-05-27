@@ -69,6 +69,76 @@
       "id": "q14",
       "query": "What prerequisites are needed for this course?",
       "expected_keywords": ["probability", "linear algebra", "statistics", "programming"]
+    },
+    {
+      "id": "lexical_01",
+      "query": "What is the least mean square method?",
+      "expected_keywords": ["least", "square", "squared", "errors", "theta"]
+    },
+    {
+      "id": "lexical_02",
+      "query": "What does the lecture say about squared errors?",
+      "expected_keywords": ["squared", "errors", "fitting", "loss", "objective"]
+    },
+    {
+      "id": "lexical_03",
+      "query": "What is the probabilistic interpretation of LMS?",
+      "expected_keywords": ["probabilistic", "errors", "normal", "likelihood", "theta"]
+    },
+    {
+      "id": "lexical_04",
+      "query": "Why does least squares relate to maximum likelihood estimation?",
+      "expected_keywords": ["maximum likelihood", "theta", "likelihood", "minimizing", "least squares"]
+    },
+    {
+      "id": "lexical_05",
+      "query": "What is the matrix version of the gradient?",
+      "expected_keywords": ["matrix", "gradient", "vector", "theta", "transpose"]
+    },
+    {
+      "id": "lexical_06",
+      "query": "Why can matrix inversion be computationally expensive?",
+      "expected_keywords": ["matrix", "inversion", "complexity", "expensive", "features"]
+    },
+    {
+      "id": "lexical_07",
+      "query": "What does the lecture say about X transpose X?",
+      "expected_keywords": ["transpose", "matrix", "covariance", "inversion", "theta"]
+    },
+    {
+      "id": "lexical_08",
+      "query": "What is the Gaussian error assumption in linear regression?",
+      "expected_keywords": ["error", "Gaussian", "normal", "zero mean", "variance"]
+    },
+    {
+      "id": "lexical_09",
+      "query": "What is topic modeling?",
+      "expected_keywords": ["topic", "documents", "keywords", "bag-of-words", "latent semantic indexing"]
+    },
+    {
+      "id": "lexical_10",
+      "query": "What is latent semantic indexing?",
+      "expected_keywords": ["latent semantic indexing", "principal component analysis", "dimensionality reduction", "documents"]
+    },
+    {
+      "id": "lexical_11",
+      "query": "What is matrix completion in product recommendation?",
+      "expected_keywords": ["matrix", "completion", "recommendation", "user", "item"]
+    },
+    {
+      "id": "lexical_12",
+      "query": "What is reinforcement learning in robot control?",
+      "expected_keywords": ["reinforcement learning", "sequential", "decision-making", "online learning", "robot"]
+    },
+    {
+      "id": "lexical_13",
+      "query": "What is the role of Hidden Markov Models in speech recognition?",
+      "expected_keywords": ["Hidden Markov Model", "speech", "sequence", "observations", "interdependence"]
+    },
+    {
+      "id": "lexical_14",
+      "query": "What is bag-of-words used for in document organization?",
+      "expected_keywords": ["bag-of-words", "documents", "keywords", "frequency", "topic"]
     }
   ]
 }
