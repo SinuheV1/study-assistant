@@ -326,19 +326,7 @@ def create_chunk_metadata(document_metadata: dict,chunk_text: str,chunk_index: i
         "total_chunks": total_chunks,
         "chunk_text_length": len(chunk_text)}
 
-def chunk_document(cleaned_text: str,document_metadata: dict,target_size: int,overlap_size: int) -> list[dict]:
-    """
-    Main entry point for turning one cleaned document into chunk records.
-    Each record contains chunk_id, chunk_text, and metadata.
-
-    Args:
-        cleaned_text: Full cleaned text of the document.
-        document_metadata: Metadata dict for the parent document.
-        target_size: Target maximum raw character count per chunk.
-        overlap_size: Character budget for overlap carry-forward.
-    Returns:
-        List of chunk record dicts, each with chunk_id, chunk_text, metadata.
-    """
+def chunk_generic_text(cleaned_text: str,document_metadata: dict,target_size: int,overlap_size: int) -> list[dict]:
     blocks = split_into_blocks(cleaned_text)
     chunk_objects=build_chunks_from_blocks(blocks,target_size,overlap_size)
     
@@ -369,6 +357,140 @@ def chunk_document(cleaned_text: str,document_metadata: dict,target_size: int,ov
 
     log.info(f"Document '{chunk_records[0]['metadata']['document_id']}' "f"chunked into {total_chunks} chunks.")
     
+    return chunk_records
+
+def chunk_lecture_pdf(cleaned_text: str, document_metadata: dict, target_size: int, overlap_size:int)->list[dict]:
+    '''
+    lecture pdf chunker
+    '''
+    return chunk_generic_text(
+        cleaned_text=cleaned_text,
+        document_metadata=document_metadata,
+        target_size=target_size,
+        overlap_size=overlap_size)
+    
+def chunk_youtube_transcript(cleaned_text: str, document_metadata: dict, target_size: int, overlap_size:int)->list[dict]:
+    '''
+    placeholder document strategy function
+    '''
+    log.info(f'Using fallback generic chunking for youtube_transcript')
+
+    return chunk_generic_text(
+        cleaned_text=cleaned_text,
+        document_metadata=document_metadata,
+        target_size=target_size,
+        overlap_size=overlap_size)
+
+
+def chunk_textbook_pdf(cleaned_text: str, document_metadata: dict, target_size: int, overlap_size:int)->list[dict]:
+    '''
+    placeholder document strategy function
+    '''
+    log.info(f'Using fallback generic chunking for textbook pdf')
+    
+    return chunk_generic_text(
+        cleaned_text=cleaned_text,
+        document_metadata=document_metadata,
+        target_size=target_size,
+        overlap_size=overlap_size)
+
+def chunk_personal_notes(cleaned_text: str, document_metadata: dict, target_size: int, overlap_size:int)->list[dict]:
+    '''
+    placeholder document strategy function
+    '''
+    log.info(f'Using fallback generic chunking for personal_notes')
+
+    return chunk_generic_text(
+        cleaned_text=cleaned_text,
+        document_metadata=document_metadata,
+        target_size=target_size,
+        overlap_size=overlap_size)
+
+def chunk_research_paper(cleaned_text: str, document_metadata: dict, target_size: int, overlap_size:int)->list[dict]:
+    '''
+    placeholder document strategy function
+    '''
+    log.info('Using fallback generic chunking for research_paper')
+
+    return chunk_generic_text(
+        cleaned_text=cleaned_text,
+        document_metadata=document_metadata,
+        target_size=target_size,
+        overlap_size=overlap_size)
+    
+def normalize_source_type(source_type:str)-> str:
+    '''
+    normalize source type name for routing
+    '''
+    if not source_type:
+        return 'generic_text'
+
+    source_type = source_type.lower().strip()
+    if source_type in ['lecture_pdf', 'lecture_pdfs', 'lecture']:
+        return 'lecture_pdfs'
+
+    if source_type in ['youtube', 'youtube_transcript', 'yt_transcript']:
+        return 'youtube_transcript'
+
+    if source_type in ['textbook', 'textbook_pdf']:
+        return 'textbook_pdf'
+
+    if source_type in ['notes', 'personal_notes', 'markdown_notes']:
+        return 'personal_notes'
+
+    if source_type in ['paper', 'research_paper', 'academic_paper']:
+        return 'research_paper'
+
+    return 'generic_text'
+
+
+def select_chunking_strategy(source_type:str) -> list[dict]:
+
+    if source_type == 'lecture_pdfs':
+        return chunk_lecture_pdf
+
+    if source_type == 'youtube_transcript':
+        return chunk_youtube_transcript
+
+    if source_type == 'textbook_pdf':
+        return chunk_textbook_pdf
+
+    if source_type == 'personal_notes':
+        return chunk_personal_notes
+
+    if source_type == 'research_paper':
+        return chunk_research_paper
+
+    return chunk_generic_text
+
+def chunk_document(cleaned_text: str,document_metadata: dict,target_size: int,overlap_size: int) -> list[dict]:
+    """
+    Main entry point for turning one cleaned document into chunk records.
+    Each record contains chunk_id, chunk_text, and metadata.
+
+    Args:
+        cleaned_text: Full cleaned text of the document.
+        document_metadata: Metadata dict for the parent document.
+        target_size: Target maximum raw character count per chunk.
+        overlap_size: Character budget for overlap carry-forward.
+    Returns:
+        List of chunk record dicts, each with chunk_id, chunk_text, metadata.
+    """
+    source_type = document_metadata.get("source_type")
+
+    normalized_source_type = normalize_source_type(source_type)
+
+    chunking_strategy = select_chunking_strategy(normalized_source_type)
+
+    chunk_records = chunking_strategy(
+        cleaned_text=cleaned_text,
+        document_metadata=document_metadata,
+        target_size=target_size,
+        overlap_size=overlap_size)
+
+    if not chunk_records:
+        log.warning(f'No chunk records returned. ')
+
     return chunk_records
 
 def save_chunks(chunk_records: list[dict], output_dir: str) -> None:
