@@ -139,6 +139,9 @@ def print_sources(results,preview_chars):
         bm25_rank = result.get('bm25_rank')
         bm25_score = result.get('bm25_score')
         hybrid_score = result.get('hybrid_score')
+        page_start = metadata.get("page_start")
+        page_end = metadata.get("page_end")
+        chapter = metadata.get("chapter")
     
         print('='*80)
         print(f'Rank: {rank}')
@@ -159,6 +162,8 @@ def print_sources(results,preview_chars):
         print(f'File: {file_name}')
         print(f'Title: {title}')
         print(f'Course: {course}')
+        print(f"Chapter: {chapter}")
+        print(f"Pages: {page_start}-{page_end}")
         print(f'Source Type: {source_type}')
         print(f'Section: {section}')
         print(f'Chunk ID: {chunk_id}')

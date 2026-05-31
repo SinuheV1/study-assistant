@@ -72,6 +72,7 @@ PDF / TXT / MD
 - **Keyword Retrieval:** BM25 via `bm25s`
 - **Hybrid Retrieval:** Dense + BM25 score fusion
 - **Reranking:** Cross-encoder reranker (`cross-encoder/ms-marco-MiniLM-L-6-v2`)
+- **Sentence Splitting:** NLTK
 
 ---
 
@@ -142,6 +143,27 @@ Supported file types:
 ```text
 File → Extract Text → Clean Text → Chunk → Embed → Store in ChromaDB
 ```
+
+```md
+### Textbook PDF Ingestion
+
+Textbook PDFs are parsed with Docling using provenance-aware page metadata. For textbook-style PDFs, the ingestion pipeline preserves page boundaries from Docling’s internal document structure and converts them into page-marked Markdown before chunking.
+
+Textbook chunks include:
+
+- `source_type`
+- `course`
+- `file_name`
+- `chapter`
+- `section`
+- `page_start`
+- `page_end`
+- `chunk_id`
+
+This enables page-aware textbook citations such as:
+
+```text
+ISLP_chapter_2.pdf, K -Nearest Neighbors, pages 22-23
 
 ---
 
@@ -284,6 +306,10 @@ Displays:
 - BM25 score
 - hybrid score
 - rerank score
+- textbook chapter metadata
+- textbook page ranges
+- deterministic source citations
+- retrieval policy filtering for exercise-style sections
 
 #### Full Context Mode
 
@@ -454,6 +480,11 @@ Benefits:
 - Hybrid retrieval improves lexical query performance without replacing dense retrieval
 - Reranking is useful for experimentation but is not currently beneficial as a default
 - Grouped evaluation is necessary because semantic and lexical queries stress different retrieval behaviors
+- Textbook PDFs require page-aware metadata to support trustworthy citations
+- Docling provenance is more useful than plain Markdown export for textbook retrieval
+- Strict heading detection reduces section pollution from captions, glossary fragments, and margin text
+- Exercise sections can pollute lexical retrieval and should be penalized or filtered for normal study queries
+- Source metadata should be passed into the generation context, not only printed during retrieval debugging
 ---
 
 ## 🔒 Local-First Design
@@ -565,6 +596,10 @@ Built a local-first RAG-based study assistant with:
 - local LLM generation with Ollama
 - retrieval evaluation and A/B testing frameworks
 - retrieval debugging and observability tooling
+- provenance-aware textbook PDF ingestion with Docling
+- sentence-aware textbook chunking with page, chapter, and section metadata
+- deterministic source citations with textbook page ranges
+- retrieval policy filtering for exercise-style sections
 
 This project focuses on retrieval systems engineering, experimentation, and evaluation rather than simple chatbot generation workflows.
 ```

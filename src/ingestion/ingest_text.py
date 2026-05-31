@@ -91,11 +91,41 @@ def infer_source_from_path(file_path):
     source_type=components[source_index]
     log.info(f"Found source '{source_type}' in path.")
     return source_type
+
+def normalize_source_type(source_type):
+    if source_type is None:
+        return "generic_text"
+
+    source_type = source_type.strip().lower()
+
+    source_type_map = {
+        "lecture_pdfs": "lecture_pdfs",
+        "lecture_pdf": "lecture_pdfs",
+        "lectures": "lecture_pdfs",
+
+        "textbooks": "textbook_pdf",
+        "textbook": "textbook_pdf",
+        "textbook_pdfs": "textbook_pdf",
+        "textbook_pdf": "textbook_pdf",
+
+        "youtube": "youtube_transcript",
+        "youtube_transcripts": "youtube_transcript",
+        "transcripts": "youtube_transcript",
+
+        "notes": "personal_notes",
+        "personal_notes": "personal_notes",
+        "markdown_notes": "personal_notes",
+
+        "research_papers": "research_paper",
+        "papers": "research_paper"}
+
+    return source_type_map.get(source_type, source_type)
         
 def build_document_metadata(file_path):
     
     course=infer_course_from_path(file_path)
-    source_type=infer_source_from_path(file_path)
+    raw_source_type = infer_source_from_path(file_path)
+    source_type = normalize_source_type(raw_source_type)
     file_name=os.path.basename(file_path)
     file_size=os.path.getsize(file_path)
     title=os.path.splitext(file_name)[0]
@@ -108,7 +138,8 @@ def build_document_metadata(file_path):
     'document_id': document_id,
     'file_name': file_name,
     'file_path': file_path,
-    'source_type': source_type,
+    "source_type": source_type,
+    "raw_source_type": raw_source_type,
     'title': title,
     'course': course,
     'topic': None,
@@ -130,11 +161,11 @@ def ingest_text_document(file_path):
     cleaned_text=basic_text_cleaning(text_content)
     metadata=build_document_metadata(file_path)
     log.info('Successfully built document metadata.')
-    log.info(f'Document ID: {metadata['document_id']}')
-    log.info(f'Source type: {metadata['source_type']}')
-    log.info(f'Course: {metadata['course']}')
-    log.info(f'File type: {metadata['file_type']}')
-    log.info(f'File size: {metadata['file_size']} bytes')
+    log.info(f"Document ID: {metadata['document_id']}")
+    log.info(f"Source type: {metadata['source_type']}")
+    log.info(f"Course: {metadata['course']}")
+    log.info(f"File type: {metadata['file_type']}")
+    log.info(f"File size: {metadata['file_size']} bytes")
     
     return {'file_type': file_type,
             'raw_text': text_content,

@@ -17,6 +17,9 @@ chromadb
 #Lexical Search
 bm25s
 
+#Nltk
+Nltk
+
 # Local LLM calls
 requests
 

@@ -5,6 +5,92 @@ from src.ingestion.ingest_text import build_document_metadata
 import os
 log = setup_logger(__name__)
 
+def export_docling_to_page_marked_markdown(doc):
+    """
+    Export a DoclingDocument to page-marked Markdown using Docling item provenance.
+
+    This avoids page-by-page PDF reconversion and preserves page numbers from
+    Docling's internal document structure.
+
+    Output format:
+    <PAGE 1>
+
+    text...
+
+    <PAGE 2>
+
+    text...
+    """
+    if not doc:
+        log.warning("Docling document does not exist or is empty.")
+        return ""
+
+    page_blocks = {}
+
+    try:
+        for item, level in doc.iterate_items():
+            prov = getattr(item, "prov", None)
+
+            if not prov:
+                continue
+
+            page_number = getattr(prov[0], "page_no", None)
+
+            if page_number is None:
+                continue
+
+            text = getattr(item, "text", None)
+
+            if not text:
+                # Some Docling items may not expose plain text.
+                # Skip them for now rather than breaking ingestion.
+                continue
+
+            text = text.strip()
+
+            if not text:
+                continue
+
+            label = getattr(item, "label", None)
+            label_value = getattr(label, "value", str(label)).lower() if label else ""
+
+            if label_value in ["title", "section_header"]:
+                line = f"\n## {text}\n"
+            elif label_value == "list_item":
+                line = f"- {text}"
+            else:
+                line = text
+
+            page_blocks.setdefault(page_number, []).append(line)
+
+        if not page_blocks:
+            log.warning("No provenance-backed page blocks found in Docling document.")
+            return ""
+
+        markdown_pages = []
+
+        for page_number in sorted(page_blocks):
+            page_text = "\n\n".join(page_blocks[page_number]).strip()
+
+            if not page_text:
+                continue
+
+            markdown_pages.append(f"<PAGE {page_number}>\n\n{page_text}")
+
+        markdown_text = "\n\n".join(markdown_pages)
+
+        log.info(
+            f"Docling document exported with provenance page markers. "
+            f"Pages found: {len(markdown_pages)}"
+        )
+
+        return markdown_text
+
+    except Exception as e:
+        log.warning(f"Error exporting Docling document with provenance: {e}")
+        return ""
+    
+    
 def convert_document_with_docling(file_path):
     if not os.path.exists(file_path):
         log.warning(f'Path does not exist. {file_path}')
@@ -80,24 +166,43 @@ def assess_extraction_quality(extracted_text,file_path):
     return True
     
 def ingest_docling_document(file_path):
-    log.info(f'Starting docling document ingestion. ')
-    conversion_result=convert_document_with_docling(file_path)
-    if conversion_result is None:
-        log.critical(f'File unsuccessfully converted. Conversion Result returned None.')
+    log.info("Starting docling document ingestion.")
+
+    metadata = build_document_metadata(file_path)
+    source_type = metadata.get("source_type")
+
+    doc = convert_document_with_docling(file_path)
+
+    if doc is None:
+        log.critical("File unsuccessfully converted. Docling document returned None.")
         return None
-    raw_text=export_docling_to_markdown(conversion_result)
+
+    if source_type == "textbook_pdf":
+        log.info("Detected textbook PDF. Using Docling provenance-aware page export.")
+        raw_text = export_docling_to_page_marked_markdown(doc)
+        metadata["page_marker_strategy"] = "docling_item_provenance"
+    else:
+        raw_text = export_docling_to_markdown(doc)
+
     if not raw_text:
-        log.critical(f'Document unsuccessfully converted to markdown. ')
+        log.critical("Document unsuccessfully converted to markdown.")
         return None
-    is_valid=assess_extraction_quality(raw_text,file_path)
+
+    is_valid = assess_extraction_quality(raw_text, file_path)
+
     if not is_valid:
-        log.warning(f'Skipping document due to poor extraction results. {file_path} ')
+        log.warning(f"Skipping document due to poor extraction results. {file_path}")
         return None
-    cleaned_text=basic_text_cleaning(raw_text)
-    metadata=build_document_metadata(file_path)
-    metadata['extraction_method']='docling'
-    metadata['raw_extraction_format']='markdown'
-    log.info(f'Document successfully extracted with docling. ')
-    return {'raw_text':raw_text,
-            'cleaned_text': cleaned_text,
-            'metadata': metadata}
+
+    cleaned_text = basic_text_cleaning(raw_text)
+
+    metadata["extraction_method"] = "docling"
+    metadata["raw_extraction_format"] = "markdown_with_page_markers"
+
+    log.info("Document successfully extracted with docling.")
+
+    return {
+        "raw_text": raw_text,
+        "cleaned_text": cleaned_text,
+        "metadata": metadata,
+    }

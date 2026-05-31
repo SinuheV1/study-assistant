@@ -386,3 +386,29 @@ Notes:
   dense retrieval as default
   hybrid retrieval as optional for exact technical terms
   reranking as experimental
+
+# 2026-05-30
+
+## Added
+
+* Added provenance-aware textbook PDF chunking using Docling document structure.
+* Added page-aware textbook chunk metadata with `page_start`, `page_end`, `chapter`, `section`, and `sections`.
+* Added `textbook_pdf` chunking strategy with sentence-aware splitting using NLTK.
+* Added source-type normalization so textbook paths route to the textbook chunker.
+* Added page-marker export from Docling provenance to preserve textbook page boundaries.
+* Added retrieval policy logic to penalize or filter exercise-style sections such as `Conceptual`, `Applied`, and `Exercises` for normal study queries.
+* Added richer generation context formatting with file name, course, chapter, section, page range, chunk ID, and citation metadata.
+* Added deterministic source citation appending for generated answers.
+
+## Changed
+
+* Improved textbook heading detection to reduce false section labels from glossary fragments, captions, and short margin text.
+* Updated hybrid retrieval flow to better handle textbook-style sources and avoid exercise chunks dominating definition-style queries.
+* Improved generation prompt to avoid citation hallucination, extraction-artifact leakage, and unnecessary bias/variance explanations.
+
+## Validated
+
+* Tested textbook ingestion on ISLP Chapter 2.
+* Verified 152 textbook chunks created after stricter heading detection.
+* Verified page-aware retrieval for supervised learning, bias-variance tradeoff, K-nearest neighbors, prediction vs inference, and regression vs classification.
+* Confirmed hybrid retrieval and reranking return correct textbook sections with page citations.

@@ -24,6 +24,7 @@ chunks_dir = 'data/processed/chunks'
 embeddings_dir = 'data/processed/embeddings'
 
 
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Run ingestion pipeline.")
     parser.add_argument(

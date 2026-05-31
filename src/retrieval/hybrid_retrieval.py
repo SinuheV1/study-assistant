@@ -71,19 +71,132 @@ def merge_retrieval_results(dense_results:list[dict],bm25_results:list[dict])->l
 
     return list(merged.values())
 
+def is_practice_query(query: str) -> bool:
+    query = query.lower()
 
-def compute_hybrid_score(merged_results:list[dict],alpha:float)->list:
+    practice_terms = [
+        "exercise",
+        "practice",
+        "problem",
+        "homework",
+        "quiz",
+        "conceptual",
+        "applied",
+        "question",
+        "questions",
+    ]
+
+    return any(term in query for term in practice_terms)
+
+def normalize_section_name(section: str) -> str:
+    return " ".join(str(section).strip().lower().split())
+
+
+def is_exercise_section(result: dict) -> bool:
+    metadata = result.get("metadata", {})
+    section = normalize_section_name(metadata.get("section", ""))
+
+    exact_exercise_sections = {
+        "conceptual",
+        "applied",
+        "exercises",
+        "exercise",
+        "problems",
+    }
+
+    if section in exact_exercise_sections:
+        return True
+
+    # Allow section names like:
+    # "Exercises"
+    # "Chapter 2 Exercises"
+    # but avoid matching:
+    # "2.1.5 Regression Versus Classification Problems"
+    if section.startswith("exercises"):
+        return True
+
+    if section.endswith("exercises"):
+        return True
+
+    return False
+
+def filter_exercise_sections(
+    results: list[dict],
+    query: str,
+    min_results: int = 1,
+) -> list[dict]:
+    """
+    Remove exercise/practice sections for normal study questions.
+
+    If the query asks for practice/exercises, keep them.
+    If filtering leaves at least min_results, use the filtered set.
+    Otherwise, fall back to original results.
+    """
+    if is_practice_query(query):
+        return results
+
+    filtered_results = [
+        result
+        for result in results
+        if not is_exercise_section(result)
+    ]
+
+    if len(filtered_results) >= min_results:
+        return filtered_results
+
+    return results
+
+def get_section_penalty(result: dict, query: str) -> float:
+    metadata = result.get("metadata", {})
+    section = str(metadata.get("section", "")).lower()
+
+    # If the user is asking for exercises/practice, do not penalize exercise chunks.
+    if is_practice_query(query):
+        return 1.0
+
+    exercise_sections = [
+        "conceptual",
+        "applied",
+        "exercises",
+        "exercise",
+    ]
+
+    lab_sections = [
+        "lab",
+    ]
+
+    if any(term in section for term in exercise_sections):
+        return 0.25
+
+    if any(term in section for term in lab_sections):
+        return 0.85
+
+    return 1.0
+
+def compute_hybrid_score(merged_results: list[dict], alpha: float, query: str) -> list[dict]:
     for result in merged_results:
-        #original chromadb rank
-        dense_component=result.get('dense_score_norm',0.0)
-        #original bm25 rank
-        bm25_component=result.get('bm25_score_norm',0.0)
-        hybrid_score=alpha*dense_component + (1-alpha) *bm25_component
-        result['hybrid_score']=hybrid_score
-    scored_results = sorted(merged_results, key=lambda x: x.get('hybrid_score',0.0),reverse=True)
+        dense_component = result.get("dense_score_norm", 0.0)
+        bm25_component = result.get("bm25_score_norm", 0.0)
+
+        raw_hybrid_score = alpha * dense_component + (1 - alpha) * bm25_component
+
+        section_penalty = get_section_penalty(result, query)
+
+        final_hybrid_score = raw_hybrid_score * section_penalty
+
+        result["hybrid_score_raw"] = raw_hybrid_score
+        result["section_penalty"] = section_penalty
+        result["hybrid_score"] = final_hybrid_score
+
+    scored_results = sorted(
+        merged_results,
+        key=lambda x: x.get("hybrid_score", 0.0),
+        reverse=True,
+    )
+
     for index, result in enumerate(scored_results, start=1):
-        #hybrid rank
         result["rank"] = index
+
     return scored_results
 
 
@@ -118,11 +231,19 @@ def hybrid_retrieve(query:str,collection,
 
     scored_results = compute_hybrid_score(
         merged_results=merged_results,
-        alpha=alpha)
-    
+        alpha=alpha,
+        query=query,
+    )
+
+    scored_results = filter_exercise_sections(
+        results=scored_results,
+        query=query,
+        min_results=1,
+    )
     log.info(
         f'Hybrid retrieval returned {min(top_k, len(scored_results))} results '
         f'from {len(merged_results)} merged candidates.')
     
-    return scored_results[:top_k]    
+    return scored_results[:top_k]
+    
 

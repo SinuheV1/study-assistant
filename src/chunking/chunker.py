@@ -1,4 +1,5 @@
 from src.utils.logging import setup_logger
+from src.chunking.textbook_chunker import chunk_textbook_pdf
 import re
 import string
 import hashlib
@@ -382,7 +383,7 @@ def chunk_youtube_transcript(cleaned_text: str, document_metadata: dict, target_
         overlap_size=overlap_size)
 
 
-def chunk_textbook_pdf(cleaned_text: str, document_metadata: dict, target_size: int, overlap_size:int)->list[dict]:
+def chunk_textbook_pdf_fallback(cleaned_text: str, document_metadata: dict, target_size: int, overlap_size:int)->list[dict]:
     '''
     placeholder document strategy function
     '''
