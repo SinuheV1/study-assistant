@@ -15,8 +15,8 @@ log = setup_logger(__name__)
 persist_directory = "data/processed/vector_store"
 collection_name = "study_assistant_chunks"
 chunk_directory='data/processed/chunks'
-embedding_model = "all-MiniLM-L6-v2"
-llm_model = "llama3.2:3b"
+embedding_model = "qwen3-embedding:4b"
+llm_model = "qwen3.6:27b"
 top_k = 4
 
 
@@ -72,8 +72,8 @@ def parse_args():
         help='Flag to turn reranker on/off')
     parser.add_argument(
         '--reranker-model',
-        default='cross-encoder/ms-marco-MiniLM-L-6-v2',
-        help='Flag to choose reranker model')
+        default='mixedbread-ai/mxbai-rerank-base-v1',
+        help='Flag to choose cross encoder reranker model. ')
     parser.add_argument(
         '--candidate-k',
         type=int,

@@ -1,21 +1,18 @@
 from src.utils.logging import setup_logger
-from sentence_transformers import SentenceTransformer
-import numpy as np
 import json
 import os
-
+import ollama
 
 
 log = setup_logger(__name__)
-_model_cache: dict = {}
 
 def load_embedding_model(model_name: str):
-    if model_name not in _model_cache:
-            _model_cache[model_name] = SentenceTransformer(model_name)
-            log.info(f"Embedding model loaded: {model_name}")
-        
-    return _model_cache[model_name]
-
+    """
+    For Ollama embedding models, there is no local Python model object to load.
+    Ollama serves the model through the local Ollama server.
+    """
+    log.info(f"Using Ollama embedding model: {model_name}")
+    return model_name
 
 def validate_chunk_records(chunk_records: list[dict]) -> list[dict]:
     
@@ -34,24 +31,41 @@ def extract_texts_for_embeddings(chunk_records: list[dict]) -> list[str]:
 
     return [record["chunk_text"] for record in chunk_records]
 
-def generate_embeddings(model, texts: list[str], batch_size: int = 64):
+def generate_embeddings(model_name: str, texts: list[str], batch_size: int = 64):
+    all_embeddings = []
 
-    embeddings = model.encode(texts, batch_size=batch_size, show_progress_bar=True)
-    return embeddings
+    for start_index in range(0, len(texts), batch_size):
+        batch_texts = texts[start_index:start_index + batch_size]
 
+        response = ollama.embed(
+            model=model_name,
+            input=batch_texts,
+        )
 
-def attach_embeddings_to_chunks(chunk_records: list[dict], embeddings: np.ndarray, model_name: str) -> list[dict]:
+        batch_embeddings = response["embeddings"]
+        all_embeddings.extend(batch_embeddings)
+
+        log.info(
+            f"Embedded batch {start_index // batch_size + 1}: "
+            f"{len(batch_texts)} chunk(s)"
+        )
+
+    return all_embeddings
+
+def attach_embeddings_to_chunks(chunk_records: list[dict], embeddings: list[list[float]], model_name: str) -> list[dict]:
     
     embedded_chunk_records=[]
-    for index,chunk_record in enumerate(chunk_records):
+    for index, chunk_record in enumerate(chunk_records):
         embedded_record = {
             "chunk_id": chunk_record["chunk_id"],
             "chunk_text": chunk_record["chunk_text"],
             "metadata": chunk_record["metadata"],
-            "embedding": embeddings[index].tolist(),
-            "embedding_model": model_name}
+            "embedding": embeddings[index],
+            "embedding_model": model_name
+        }
         
         embedded_chunk_records.append(embedded_record)
+
     return embedded_chunk_records
         
 

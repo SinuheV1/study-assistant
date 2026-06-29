@@ -67,41 +67,15 @@ Text:
 
     return context_block
 
-knn_bias_variance_instruction = """
-For K-nearest neighbors bias/variance questions:
-- Smaller K uses fewer neighbors and creates a more flexible classifier.
-- Smaller K can overfit, which usually means low bias and high variance.
-- Larger K uses more neighbors and creates a smoother, less flexible classifier.
-- Larger K can underfit, which usually means high bias and low variance.
-- Check that the final answer does not contradict these relationships.
-"""
-
-def needs_bias_variance_guardrail(query: str) -> bool:
-    query = query.lower()
-
-    terms = [
-        "bias",
-        "variance",
-        "tradeoff",
-        "overfit",
-        "underfit",
-        "flexibility",
-        "small k",
-        "smaller k",
-        "large k",
-        "larger k",
-    ]
-
-    return any(term in query for term in terms)
-
-def build_prompt(query,context_block):
-    
-    instructions="""
+def build_system_instructions() -> str:
+    return """
 You are a study assistant.
 
 Answer using only the provided context. If the context is insufficient, say so clearly.
 
 Be clear and concise. Use bullet points when useful.
+
+Do not begin with phrases like “Based on the provided context.” Answer directly.
 
 Answer the user's question directly. Do not add extra concepts unless they are needed to answer the question.
 
@@ -117,40 +91,66 @@ For definition questions, give:
 - one important caveat only if the retrieved context clearly supports it
 
 Do not write “Caveat: None mentioned.”
+""".strip()
 
-Do not discuss bias, variance, overfitting, underfitting, or model flexibility unless the question specifically asks about them.
-"""
-    if needs_bias_variance_guardrail(query):
-        instructions += "\n" + knn_bias_variance_instruction
-    
-    prompt=instructions +'\nContext:\n'+ context_block +'\nQuestion:\n'+ query
-    return prompt
 
-def call_ollama(prompt,model_name):
-        try:
-            base_url = "http://localhost:11434/api/generate"
+def build_user_message(query: str, context_block: str) -> str:
+    return f"""
+Context:
+{context_block}
 
-            payload = {
-                "model": model_name,
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "temperature": 0.2,
-                    "num_predict": 400,
+Question:
+{query}
+""".strip()
+
+def call_ollama(system_instructions, user_message, model_name):
+    try:
+        base_url = "http://localhost:11434/api/chat"
+
+        payload = {
+            "model": model_name,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": system_instructions,
                 },
-            }
+                {
+                    "role": "user",
+                    "content": user_message,
+                },
+            ],
+            "stream": False,
+            "think": False,
+            "options": {
+                "temperature": 0.2,
+                "num_predict": 800,
+            },
+        }
 
-            request = requests.post(base_url, json=payload)
-            request.raise_for_status()
+        log.info(f"Calling Ollama model: {model_name}")
+        log.info(f"User message length: {len(user_message)} characters")
 
-            data = request.json()
-            response = data.get("response", "")
+        request = requests.post(base_url, json=payload, timeout=300)
+        log.info(f"Ollama status code: {request.status_code}")
 
-            return response.strip()
+        request.raise_for_status()
 
-        except Exception as e:
-            log.warning(f"Request failed. Reason: {e}")
+        data = request.json()
+        log.info(f"Ollama response keys: {list(data.keys())}")
+
+        message = data.get("message", {})
+        response = message.get("content", "")
+
+        if not response:
+            log.warning(f"Ollama returned an empty response. Full response keys: {list(data.keys())}")
+            log.warning(f"Done reason: {data.get('done_reason')}")
             return None
+
+        return response.strip()
+
+    except Exception as e:
+        log.exception(f"Request failed. Reason: {e}")
+        return None
     
 def generate_answer(query, retrieved_results, model_name):
     if not query:
@@ -161,9 +161,14 @@ def generate_answer(query, retrieved_results, model_name):
         return "I do not have enough context to answer."
 
     context_block = build_context_block(retrieved_results)
-    prompt = build_prompt(query, context_block)
+    system_instructions = build_system_instructions()
+    user_message = build_user_message(query, context_block)
 
-    answer = call_ollama(prompt, model_name)
+    answer = call_ollama(
+        system_instructions=system_instructions,
+        user_message=user_message,
+        model_name=model_name,
+    )
 
     if not answer:
         return "I was unable to generate an answer."
@@ -182,19 +187,6 @@ def strip_llm_sources(answer: str) -> str:
             cleaned = cleaned.split(marker)[0].strip()
 
     return cleaned
-
-def format_source_line(result):
-    metadata = result.get("metadata", {})
-
-    file_name = metadata.get("file_name", "unknown file")
-    section = metadata.get("section", "unknown section")
-    page_start = metadata.get("page_start")
-    page_end = metadata.get("page_end")
-
-    pages = format_page_range(page_start, page_end)
-
-    return f"- {file_name}, {section}, pages {pages}"
-
 
 def format_answer_with_sources(answer, retrieved_results):
     if not answer:
