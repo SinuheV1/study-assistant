@@ -62,16 +62,18 @@ PDF / TXT / MD
 
 ## ⚙️ Tech Stack
 
-- **Language:** Python
-- **LLM (local):** Ollama (Llama 3)
-- **Vector Database:** ChromaDB
-- **Embeddings:** sentence-transformers (`all-MiniLM-L6-v2`)
-- **PDF Parsing:** Docling
-- **Evaluation:** Custom retrieval + generation benchmarking
-- **CLI Interface:** argparse
-- **Keyword Retrieval:** BM25 via `bm25s`
-- **Hybrid Retrieval:** Dense + BM25 score fusion
-- **Reranking:** Cross-encoder reranker (`cross-encoder/ms-marco-MiniLM-L-6-v2`)
+- **Language:** Python 
+- **LLM Runtime:** Ollama 
+- **Generation Model:** `qwen3.6:27b` 
+- **Embedding Model:** `qwen3-embedding:4b` 
+- **Vector Database:** ChromaDB 
+- **PDF Parsing:** Docling 
+- **Keyword Retrieval:** BM25 via `bm25s` 
+- **Hybrid Retrieval:** Dense + BM25 score fusion 
+- **Reranking:** Cross-encoder reranker (`mixedbread-ai/mxbai-rerank-base-v1`) 
+- **Generation API:** Ollama `/api/chat` 
+- **Evaluation:** Custom retrieval + generation benchmarking 
+- **CLI Interface:** argparse 
 - **Sentence Splitting:** NLTK
 
 ---
@@ -85,7 +87,8 @@ study-assistant/
 │   ├── ingestion/
 │   │   ├── ingest_docling_document.py
 │   │   ├── ingest_text.py
-│   │   └── clean_text.py
+│   │   ├── clean_text.py
+│   │   └── manifest.py
 │   │
 │   ├── chunking/
 │   ├── embedding/
@@ -107,8 +110,8 @@ study-assistant/
 │
 ├── data/
 │   ├── raw/
-│   └── processed/
-│
+│   ├── processed/
+│   └── ingestion_manifest.json
 └── README.md
 ```
 
@@ -144,7 +147,38 @@ Supported file types:
 File → Extract Text → Clean Text → Chunk → Embed → Store in ChromaDB
 ```
 
-```md
+### Ingestion Manifest
+
+The ingestion pipeline includes manifest utilities for repeatable and incremental document ingestion.
+
+The manifest tracks each ingested document using:
+
+- `document_id`
+- `file_name`
+- `file_path`
+- `file_hash`
+- `file_size`
+- `source_type`
+- `course`
+- `title`
+- `chunks_created`
+- `ingested_at`
+- `status`
+
+File hashes are computed with SHA-256 over the document contents, not just the file path. This allows the pipeline to detect whether a source file has changed since the last successful ingestion.
+
+This enables future folder-level ingestion behavior such as:
+
+```text
+file unchanged → skip ingestion
+file changed   → re-ingest
+new file       → ingest
+failed status  → retry
+```
+
+The manifest is designed to support scalable multi-document ingestion without repeatedly reprocessing unchanged PDFs, transcripts, or notes.
+
+
 ### Textbook PDF Ingestion
 
 Textbook PDFs are parsed with Docling using provenance-aware page metadata. For textbook-style PDFs, the ingestion pipeline preserves page boundaries from Docling’s internal document structure and converts them into page-marked Markdown before chunking.
@@ -167,12 +201,13 @@ ISLP_chapter_2.pdf, K -Nearest Neighbors, pages 22-23
 
 ---
 
+```md
 ## 🔍 Retrieval + Generation Flow
 
 ```text
 User Query
     ↓
-Embed Query
+Embed Query with Ollama Embedding Model
     ↓
 Dense Retrieval from ChromaDB
     +
@@ -184,13 +219,15 @@ Optional Cross-Encoder Reranking
     ↓
 Select Final Top-K Chunks
     ↓
-Build Context Block
+Build Metadata-Rich Context Block
     ↓
-Generate Answer with Ollama
+Generate Answer with Ollama Chat API
+    ↓
+Append Deterministic Source Citations
     ↓
 Return Answer + Sources
-```
 
+Generation uses Ollama’s /api/chat endpoint with separate system and user messages. System instructions define study-assistant behavior, while the user message contains retrieved context and the question.
 ---
 
 ## 💬 Query Pipeline
@@ -485,6 +522,11 @@ Benefits:
 - Strict heading detection reduces section pollution from captions, glossary fragments, and margin text
 - Exercise sections can pollute lexical retrieval and should be penalized or filtered for normal study queries
 - Source metadata should be passed into the generation context, not only printed during retrieval debugging
+- Local model choice materially affects latency, answer quality, and hardware requirements.
+- Ollama chat generation is better suited than raw prompt generation for the RAG answer step because it separates system instructions from user context.
+- Thinking-capable models may spend generation budget on internal reasoning unless token budgets and model options are configured carefully.
+- Manifest-based ingestion is necessary before scaling from single-file ingestion to folder-level multi-document ingestion.
+- File content hashing is more reliable than file-path tracking for detecting changed source documents.
 ---
 
 ## 🔒 Local-First Design
@@ -507,8 +549,11 @@ Benefits:
 - Query rewriting / expansion
 - Multi-document retrieval
 - Improved reranking strategies
+- Wire ingestion manifest into folder-level ingestion 
+- Add skip-unchanged-file logic to the ingestion pipeline 
+- Add force-reingest and reset-manifest CLI options 
+- Add manifest-aware vector DB cleanup for deleted or renamed files
 - Metadata filtering
-- Folder-level ingestion
 - Better OCR/transcript cleanup
 - Latency optimization
 - FastAPI inference layer
@@ -530,10 +575,15 @@ pip install -r requirements.txt
 ollama serve
 ```
 
-### 3. Pull model
+### 3. Pull local models
 
 ```bash
-ollama pull llama3.2:3b
+ollama pull qwen3-embedding:4b
+ollama pull qwen3.6:27b
+
+Optional reranker model is downloaded automatically from Hugging Face on first use:
+
+mixedbread-ai/mxbai-rerank-base-v1
 ```
 
 ### 4. Run ingestion
@@ -585,21 +635,23 @@ This project goes beyond a simple chatbot:
 ## 📌 Summary
 
 ```text
-Built a local-first RAG-based study assistant with:
-- multi-format document ingestion
-- deterministic text cleaning
-- metadata-aware chunking
-- vector retrieval with ChromaDB
-- BM25 keyword retrieval with `bm25s`
-- hybrid dense + BM25 retrieval
-- optional cross-encoder reranking
-- local LLM generation with Ollama
-- retrieval evaluation and A/B testing frameworks
-- retrieval debugging and observability tooling
-- provenance-aware textbook PDF ingestion with Docling
-- sentence-aware textbook chunking with page, chapter, and section metadata
-- deterministic source citations with textbook page ranges
-- retrieval policy filtering for exercise-style sections
+Built a local-first RAG-based study assistant with: 
+- multi-format document ingestion 
+- deterministic text cleaning 
+- metadata-aware chunking 
+- vector retrieval with ChromaDB 
+- Ollama-based embedding generation 
+- BM25 keyword retrieval with `bm25s` 
+- hybrid dense + BM25 retrieval 
+- optional cross-encoder reranking 
+- local answer generation with Ollama `/api/chat` 
+- retrieval evaluation and A/B testing frameworks 
+- retrieval debugging and observability tooling 
+- provenance-aware textbook PDF ingestion with Docling 
+- sentence-aware textbook chunking with page, chapter, and section metadata 
+- deterministic source citations with textbook page ranges 
+- ingestion manifest utilities with SHA-256 file hashing 
+- groundwork for folder-level incremental ingestion 
 
 This project focuses on retrieval systems engineering, experimentation, and evaluation rather than simple chatbot generation workflows.
 ```

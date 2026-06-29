@@ -412,3 +412,41 @@ Notes:
 * Verified 152 textbook chunks created after stricter heading detection.
 * Verified page-aware retrieval for supervised learning, bias-variance tradeoff, K-nearest neighbors, prediction vs inference, and regression vs classification.
 * Confirmed hybrid retrieval and reranking return correct textbook sections with page citations.
+
+## 2026-06-28
+
+### Added
+
+* Added an ingestion manifest module to support repeatable and incremental ingestion workflows.
+* Added file hashing with SHA-256 to detect whether source documents have changed since the last successful ingestion.
+* Added manifest helpers for loading, saving, updating, and checking document ingestion records.
+* Added manifest metadata fields for document ID, file name, file path, file hash, file size, source type, course, title, chunk count, ingestion timestamp, and status.
+
+### Changed
+
+* Updated the RAG generation flow to use Ollama’s `/api/chat` endpoint instead of `/api/generate`.
+* Updated generation to use structured chat messages with separate system instructions and user context.
+* Updated local model configuration to use larger Ollama-hosted models:
+
+  * `qwen3-embedding:4b` for embeddings
+  * `qwen3.6:27b` for answer generation
+* Increased generation token budget to support larger local reasoning models.
+* Removed the hardcoded KNN bias/variance guardrail from the generation prompt to keep answers grounded in retrieved context.
+* Improved generation logging for Ollama requests, response status codes, response keys, and empty-response debugging.
+
+### Fixed
+
+* Fixed empty generation output caused by the model using the full token budget on thinking output before producing final answer content.
+* Fixed generator response parsing by switching from `/api/generate` response handling to `/api/chat` message-content handling.
+* Fixed manifest save behavior so new manifest files and parent directories can be created automatically.
+* Fixed manifest unchanged-file detection by comparing the current file hash against the stored manifest hash.
+* Fixed file hashing to hash document contents instead of file path strings.
+
+### Validated
+
+* Confirmed dense retrieval works against the Chroma vector store.
+* Confirmed BM25 retrieval loads combined lecture and textbook chunk records.
+* Confirmed hybrid retrieval works across lecture and textbook sources.
+* Confirmed reranking with `mixedbread-ai/mxbai-rerank-base-v1` improves result ordering for textbook queries.
+* Confirmed full RAG pipeline successfully answers textbook questions using retrieved context and appends deterministic source citations.
+* Validated the query: “What is the bias variance tradeoff?” using hybrid retrieval, reranking, Ollama chat generation, and page-aware textbook citations.
