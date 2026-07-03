@@ -23,6 +23,9 @@ Nltk
 # Local LLM calls
 requests
 
+# Local MCP server
+mcp
+
 # Config
 pyyaml
 
