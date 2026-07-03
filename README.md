@@ -22,6 +22,7 @@ This project implements an end-to-end RAG pipeline that:
 - Supports dense, BM25, hybrid, and reranked retrieval modes
 - Combines semantic vector search with lexical BM25 search for hybrid retrieval
 - Evaluates retrieval performance across semantic and lexical query groups
+- Exposes read-only local MCP tools for agent-driven retrieval debugging
 
 ---
 
@@ -72,6 +73,7 @@ PDF / TXT / MD
 - **Hybrid Retrieval:** Dense + BM25 score fusion 
 - **Reranking:** Cross-encoder reranker (`mixedbread-ai/mxbai-rerank-base-v1`) 
 - **Generation API:** Ollama `/api/chat` 
+- **MCP Server:** Local stdio MCP tools via `mcp`
 - **Evaluation:** Custom retrieval + generation benchmarking 
 - **CLI Interface:** argparse 
 - **Sentence Splitting:** NLTK
@@ -95,6 +97,8 @@ study-assistant/
 │   ├── retrieval/
 │   ├── reranking/
 │   ├── generation/
+│   ├── services/
+│   ├── mcp_server/
 │   ├── vector_store/
 │   └── utils/
 │
@@ -367,6 +371,29 @@ This enables detailed retrieval debugging and chunk quality inspection.
 
 ---
 
+## 🔌 Local MCP Server
+
+The project includes a lightweight local MCP server for read-only RAG operations. It lets an MCP client inspect the vector database and run retrieval without memorizing CLI commands.
+
+Phase 1 tools:
+
+- `health_check`
+- `collection_stats`
+- `list_indexed_documents`
+- `search_notes`
+
+Run the server locally over stdio:
+
+```bash
+python -m src.mcp_server.server
+```
+
+The MCP layer wraps the existing RAG code and does not replace the CLI scripts. Phase 1 is read-only: it does not ingest files, reset the vector database, generate study guides, or execute arbitrary shell commands.
+
+See `MCP_USAGE.md` for setup, tool behavior, configuration, and troubleshooting.
+
+---
+
 ## 📊 Evaluation Framework
 
 The project supports retrieval experimentation through:
@@ -599,13 +626,19 @@ python -m scripts.run_query_pipeline \
 -q "What is supervised learning?"
 ```
 
-### 6. Run evaluation
+### 6. Run the local MCP server
+
+```bash
+python -m src.mcp_server.server
+```
+
+### 7. Run evaluation
 
 ```bash
 python -m scripts.evaluate_rag
 ```
 
-### 7. Run chunking A/B tests
+### 8. Run chunking A/B tests
 
 ```bash
 python -m scripts.run_chunking_ab_test

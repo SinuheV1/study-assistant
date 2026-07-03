@@ -450,3 +450,47 @@ Notes:
 * Confirmed reranking with `mixedbread-ai/mxbai-rerank-base-v1` improves result ordering for textbook queries.
 * Confirmed full RAG pipeline successfully answers textbook questions using retrieved context and appends deterministic source citations.
 * Validated the query: “What is the bias variance tradeoff?” using hybrid retrieval, reranking, Ollama chat generation, and page-aware textbook citations.
+
+---
+
+# 2026-07-02
+
+## Added
+
+### Local MCP Server
+- Added a lightweight local MCP server for read-only RAG Study Assistant operations.
+- Added `src/mcp_server/server.py` exposing Phase 1 MCP tools:
+  - `health_check`
+  - `collection_stats`
+  - `list_indexed_documents`
+  - `search_notes`
+- Added reusable read-only service wrappers in `src/services/rag_service.py`.
+- Added Chroma metadata-backed indexed document listing with chunk JSON fallback.
+- Added hybrid retrieval and reranking defaults for MCP search.
+- Added graceful reranker fallback warnings when reranking is unavailable or fails.
+- Added `MCP_USAGE.md` with local run instructions, tool behavior, safety notes, and troubleshooting.
+- Added `mcp` to project requirements.
+
+---
+
+## Changed
+
+### Documentation
+- Updated README with local MCP server overview.
+- Added MCP server to the project structure and tech stack documentation.
+- Added MCP server run command to Getting Started.
+
+---
+
+## Validated
+
+- Confirmed Phase 1 MCP code compiles successfully with redirected bytecode cache.
+- Confirmed Phase 1 remains read-only and does not expose ingestion, reset, or answer-generation tools.
+
+---
+
+## Learned
+
+- A thin MCP wrapper can expose the existing RAG retrieval workflow without replacing CLI scripts.
+- Chroma metadata is sufficient as the V1 source of truth for indexed document listing.
+- Reranking should fail gracefully in agent-facing tools so retrieval debugging remains usable.
