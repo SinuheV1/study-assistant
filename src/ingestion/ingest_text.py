@@ -3,6 +3,7 @@ from src.ingestion.clean_text import basic_text_cleaning
 import os
 import datetime
 import hashlib
+from pathlib import Path
 
 log=setup_logger(__name__)
 
@@ -122,6 +123,9 @@ def normalize_source_type(source_type):
     return source_type_map.get(source_type, source_type)
         
 def build_document_metadata(file_path):
+    file_path = Path(file_path)
+    file_path_str = file_path.as_posix()
+    
     
     course=infer_course_from_path(file_path)
     raw_source_type = infer_source_from_path(file_path)
@@ -131,13 +135,13 @@ def build_document_metadata(file_path):
     title=os.path.splitext(file_name)[0]
     extension = os.path.splitext(file_path)[1].lower()
     now=datetime.datetime.now()
-    hash_object=hashlib.sha256(file_path.encode('utf-8'))
+    hash_object = hashlib.sha256(file_path_str.encode("utf-8"))
     document_id='doc_' + hash_object.hexdigest()[:12]
     
     metadata = {
     'document_id': document_id,
     'file_name': file_name,
-    'file_path': file_path,
+    'file_path': file_path_str,
     "source_type": source_type,
     "raw_source_type": raw_source_type,
     'title': title,

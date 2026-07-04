@@ -47,3 +47,6 @@ docs/
 
 #adding for now
 requirements-lock.txt
+
+#omp
+.omp
