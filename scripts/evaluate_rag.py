@@ -6,22 +6,26 @@ from src.generation.generator import generate_answer
 from src.reranking.reranker import rerank_results
 from src.retrieval.bm25_retriever import load_chunk_records
 from src.retrieval.hybrid_retrieval import hybrid_retrieve
+from src.utils.config import load_config
 
 
-persist_directory = "data/processed/vector_store"
-collection_name = "study_assistant_chunks"
-chunk_directory = "data/processed/chunks"
+config = load_config()
 
-embed_model = "all-MiniLM-L6-v2"
-llm_model = "llama3.2:3b"
-reranker_model = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+persist_directory = config["paths"]["persist_dir"]
+collection_name = config["vector_store"]["collection_name"]
+chunk_directory = config["paths"]["chunk_dir"]
+evaluation_queries_path = config["paths"]["evaluation_queries"]
 
-top_k = 3
-candidate_k = 8
+embed_model = config["models"]["embedding"]
+llm_model = config["models"]["llm"]
+reranker_model = config["models"]["reranker"]
 
-dense_k = 8
-bm25_k = 8
-hybrid_alpha = 0.6
+top_k = config["evaluation"]["top_k"]
+candidate_k = config["evaluation"]["candidate_k"]
+
+dense_k = config["retrieval"]["dense_k"]
+bm25_k = config["retrieval"]["bm25_k"]
+hybrid_alpha = config["retrieval"]["hybrid_alpha"]
 
 debug = False
 
@@ -172,14 +176,14 @@ def print_summary(label, store):
 
 
 def run_evaluation():
-    with open("evaluation/queries.json") as f:
+    with open(evaluation_queries_path) as f:
         data = json.load(f)
 
     queries = data["queries"]
 
-    client = initialize_vector_db(persist_directory)
+    client = initialize_vector_db(str(persist_directory))
     collection = get_or_create_collection(client, collection_name)
-    chunk_records = load_chunk_records(chunk_directory)
+    chunk_records = load_chunk_records(str(chunk_directory))
 
     all_scores = init_score_store()
     semantic_scores = init_score_store()

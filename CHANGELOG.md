@@ -494,3 +494,19 @@ Notes:
 - A thin MCP wrapper can expose the existing RAG retrieval workflow without replacing CLI scripts.
 - Chroma metadata is sufficient as the V1 source of truth for indexed document listing.
 - Reranking should fail gracefully in agent-facing tools so retrieval debugging remains usable.
+
+---
+
+# 2026-07-05
+
+## Added
+
+- Added `configs/config.yaml` as the single source of truth for paths, model names, collection name, chunking defaults, retrieval defaults, and evaluation defaults.
+- Added `src/utils/config.py` config loader with project-root path resolution and existing `RAG_*` environment variable overrides.
+- Added config loader tests.
+
+## Changed
+
+- Updated ingestion, query, evaluation, chunking A/B, and service code to read shared config instead of module-level constants.
+- Preserved evaluation-specific defaults: `top_k=3`, `candidate_k=8`.
+- Preserved chunking A/B experiment literals: `700/50` vs `900/75`.

@@ -7,6 +7,7 @@ from src.ingestion.ingest_docling_document import ingest_docling_document
 from src.ingestion.ingest_text import ingest_text_document
 from src.chunking.chunker import chunk_document
 from src.embedding.embedder import embed_chunks
+from src.utils.config import load_config
 from src.vector_store.vectordb import (initialize_vector_db,get_or_create_collection,add_records_to_collection,
     get_collection_count,reset_collection)
 
@@ -15,14 +16,15 @@ log = setup_logger(__name__)
 #Config Variables
 
 
-target_size = 900
-overlap_size = 75
-embedding_model = "qwen3-embedding:4b"
-persist_dir = 'data/processed/vector_store'
-collection_name = 'study_assistant_chunks'
-extracted_text_dir = 'data/processed/extracted_texts'
-chunks_dir = 'data/processed/chunks'
-embeddings_dir = 'data/processed/embeddings'
+config = load_config()
+target_size = config["chunking"]["target_size"]
+overlap_size = config["chunking"]["overlap_size"]
+embedding_model = config["models"]["embedding"]
+persist_dir = config["paths"]["persist_dir"]
+collection_name = config["vector_store"]["collection_name"]
+extracted_text_dir = config["paths"]["extracted_text_dir"]
+chunks_dir = config["paths"]["chunk_dir"]
+embeddings_dir = config["paths"]["embeddings_dir"]
 SUPPORTED_EXTENSIONS={".pdf",'.txt','.md'}
 
 def parse_args():
@@ -98,7 +100,7 @@ def ingest_file_type(file_path: str | Path) -> tuple[dict[str, Any] | None, str]
     return document, file_name
 
 def load_vectordb_collection(reset: bool = False):
-    client=initialize_vector_db(persist_dir)
+    client=initialize_vector_db(str(persist_dir))
     
     if reset:
         collection=reset_collection(client,collection_name)

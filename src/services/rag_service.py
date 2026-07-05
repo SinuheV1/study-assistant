@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from pathlib import Path
 from typing import Any
@@ -11,49 +10,22 @@ from src.reranking.reranker import rerank_results
 from src.retrieval.bm25_retriever import load_chunk_records
 from src.retrieval.hybrid_retrieval import hybrid_retrieve
 from src.retrieval.retriever import retrieve_relevant_chunks
+from src.utils.config import load_config
 from src.utils.logging import setup_logger
 from src.vector_store.vectordb import get_or_create_collection, initialize_vector_db
 
 
 log = setup_logger(__name__)
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-DEFAULT_PERSIST_DIR = PROJECT_ROOT / "data" / "processed" / "vector_store"
-DEFAULT_CHUNK_DIR = PROJECT_ROOT / "data" / "processed" / "chunks"
-DEFAULT_COLLECTION_NAME = "study_assistant_chunks"
-DEFAULT_EMBEDDING_MODEL = "qwen3-embedding:4b"
-DEFAULT_RERANKER_MODEL = "mixedbread-ai/mxbai-rerank-base-v1"
-
-
-def _env_path(name: str, default: Path) -> Path:
-    value = os.getenv(name)
-    if not value:
-        return default
-
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        path = PROJECT_ROOT / path
-
-    return path
-
-
 def _settings() -> dict[str, Any]:
+    config = load_config()
     return {
-        "persist_dir": _env_path("RAG_PERSIST_DIR", DEFAULT_PERSIST_DIR),
-        "chunk_dir": _env_path("RAG_CHUNK_DIR", DEFAULT_CHUNK_DIR),
-        "collection_name": os.getenv(
-            "RAG_COLLECTION_NAME",
-            DEFAULT_COLLECTION_NAME,
-        ),
-        "embedding_model": os.getenv(
-            "RAG_EMBEDDING_MODEL",
-            DEFAULT_EMBEDDING_MODEL,
-        ),
-        "reranker_model": os.getenv(
-            "RAG_RERANKER_MODEL",
-            DEFAULT_RERANKER_MODEL,
-        ),
+        "persist_dir": config["paths"]["persist_dir"],
+        "chunk_dir": config["paths"]["chunk_dir"],
+        "collection_name": config["vector_store"]["collection_name"],
+        "embedding_model": config["models"]["embedding"],
+        "reranker_model": config["models"]["reranker"],
+        "hybrid_alpha": config["retrieval"]["hybrid_alpha"],
     }
 
 
@@ -435,7 +407,7 @@ def search_notes_service(
                     dense_k=retrieval_top_k,
                     bm25_k=retrieval_top_k,
                     top_k=retrieval_top_k,
-                    alpha=0.6,
+                    alpha=settings["hybrid_alpha"],
                 )
         else:
             results = retrieve_relevant_chunks(
@@ -475,4 +447,3 @@ def search_notes_service(
         "results": [_format_search_result(result) for result in results[:safe_top_k]],
         "warnings": warnings,
     }
-

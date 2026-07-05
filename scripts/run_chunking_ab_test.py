@@ -8,6 +8,7 @@ from src.utils.io import save_json
 from src.ingestion.ingest_docling_document import ingest_docling_document
 from src.chunking.chunker import chunk_document
 from src.embedding.embedder import embed_chunks
+from src.utils.config import load_config
 from src.vector_store.vectordb import (
     initialize_vector_db,
     reset_collection,
@@ -22,13 +23,14 @@ log = setup_logger(__name__)
 # -----------------------------
 # Shared config
 # -----------------------------
+config = load_config()
 file_path = "data/raw/lecture_pdfs/Lecture_01.pdf"
-eval_queries_path = "evaluation/queries.json"
+eval_queries_path = config["paths"]["evaluation_queries"]
 
-collection_name = "study_assistant_chunks"
-embedding_model = "all-MiniLM-L6-v2"
-llm_model = "llama3.2:3b"
-top_k = 3
+collection_name = config["vector_store"]["collection_name"]
+embedding_model = config["models"]["embedding"]
+llm_model = config["models"]["llm"]
+top_k = config["evaluation"]["top_k"]
 
 run_generation = True
 

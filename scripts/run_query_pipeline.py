@@ -6,18 +6,26 @@ from src.generation.generator import generate_answer
 from src.reranking.reranker import rerank_results
 from src.retrieval.hybrid_retrieval import hybrid_retrieve
 from src.retrieval.bm25_retriever import load_chunk_records
+from src.utils.config import load_config
 
 
 
 log = setup_logger(__name__)
 
 
-persist_directory = "data/processed/vector_store"
-collection_name = "study_assistant_chunks"
-chunk_directory='data/processed/chunks'
-embedding_model = "qwen3-embedding:4b"
-llm_model = "qwen3.6:27b"
-top_k = 4
+config = load_config()
+persist_directory = config["paths"]["persist_dir"]
+collection_name = config["vector_store"]["collection_name"]
+chunk_directory = config["paths"]["chunk_dir"]
+embedding_model = config["models"]["embedding"]
+llm_model = config["models"]["llm"]
+reranker_model = config["models"]["reranker"]
+top_k = config["retrieval"]["top_k"]
+preview_chars = config["retrieval"]["preview_chars"]
+candidate_k = config["retrieval"]["candidate_k"]
+bm25_k = config["retrieval"]["bm25_k"]
+dense_k = config["retrieval"]["dense_k"]
+hybrid_alpha = config["retrieval"]["hybrid_alpha"]
 
 
 def parse_args():
@@ -64,7 +72,7 @@ def parse_args():
     parser.add_argument(
         '--preview-chars',
         type=int,
-        default=300,
+        default=preview_chars,
         help='Controls how much chunk text is printed. ')
     parser.add_argument(
         '--use-reranker',
@@ -72,12 +80,12 @@ def parse_args():
         help='Flag to turn reranker on/off')
     parser.add_argument(
         '--reranker-model',
-        default='mixedbread-ai/mxbai-rerank-base-v1',
+        default=reranker_model,
         help='Flag to choose cross encoder reranker model. ')
     parser.add_argument(
         '--candidate-k',
         type=int,
-        default=12,
+        default=candidate_k,
         help='Flag to specify how many dense candidates to retrieve before reranking.')
     parser.add_argument(
         '--use-hybrid',
@@ -86,22 +94,22 @@ def parse_args():
     parser.add_argument(
         '--bm25-k',
         type=int,
-        default=8,
+        default=bm25_k,
         help='Flag to specify how many bm25 chunks to retrieve before merging.')
     parser.add_argument(
         '--dense-k',
         type=int,
-        default=8,
+        default=dense_k,
         help='Flag to specify how many dense chunks to retrieve before merging.')
     parser.add_argument(
         '--hybrid-alpha',
         type=float,
-        default=.6,
+        default=hybrid_alpha,
         help='Weight for dense retrieval in hybrid scoring. Example: 0.6 = 60% dense, 40% BM25.')
     return parser.parse_args()
 
 def load_vector_collection(persist_dir,collection_name):
-    client = initialize_vector_db(persist_dir)
+    client = initialize_vector_db(str(persist_dir))
     collection = get_or_create_collection(client, collection_name)
     return collection
 
@@ -233,7 +241,7 @@ def run_query_pipeline(args):
         args.collection)
     
     if args.use_hybrid:
-        chunk_records=load_chunk_records(chunk_directory)
+        chunk_records=load_chunk_records(str(chunk_directory))
         
         if args.use_reranker:
             hybrid_top_k=args.candidate_k
