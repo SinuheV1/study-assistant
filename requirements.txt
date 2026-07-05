@@ -7,6 +7,7 @@ pydantic
 
 # PDF ingestion
 pypdf
+docling
 
 # Embeddings
 sentence-transformers
@@ -17,11 +18,12 @@ chromadb
 #Lexical Search
 bm25s
 
-#Nltk
-Nltk
+# NLTK
+nltk
 
 # Local LLM calls
 requests
+ollama
 
 # Local MCP server
 mcp

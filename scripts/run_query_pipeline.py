@@ -105,7 +105,7 @@ def parse_args():
         '--hybrid-alpha',
         type=float,
         default=hybrid_alpha,
-        help='Weight for dense retrieval in hybrid scoring. Example: 0.6 = 60% dense, 40% BM25.')
+        help='Weight for dense retrieval in hybrid scoring. Example: 0.6 = 60%% dense, 40%% BM25.')
     return parser.parse_args()
 
 def load_vector_collection(persist_dir,collection_name):

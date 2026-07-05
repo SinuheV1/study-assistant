@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "study-assistant"
+version = "0.1.0"
+description = "Local RAG study assistant for course notes and textbooks."
+requires-python = ">=3.12"
+dependencies = [
+  "numpy",
+  "pandas",
+  "pydantic",
+  "pypdf",
+  "docling",
+  "sentence-transformers",
+  "chromadb",
+  "bm25s",
+  "nltk",
+  "requests",
+  "ollama",
+  "mcp",
+  "pyyaml",
+  "tqdm",
+  "python-dotenv",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+namespaces = true

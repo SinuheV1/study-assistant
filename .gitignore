@@ -50,3 +50,6 @@ requirements-lock.txt
 
 #omp
 .omp
+
+#claude
+.claude/
