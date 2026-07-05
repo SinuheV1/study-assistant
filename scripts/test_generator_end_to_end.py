@@ -1,11 +1,13 @@
 from src.generation.generator import format_answer_with_sources, generate_answer
 from src.retrieval.retriever import print_retrieval_results, retrieve_relevant_chunks
+from src.utils.config import load_config
 from src.vector_store.vectordb import get_or_create_collection, initialize_vector_db
 
-persist_directory = "data/processed/vector_store"
-collection_name = "study_assistant_chunks"
-embedding_model = "all-MiniLM-L6-v2"
-llm_model = "llama3.2:3b"
+config = load_config()
+persist_directory = config["paths"]["persist_dir"]
+collection_name = config["vector_store"]["collection_name"]
+embedding_model = config["models"]["embedding"]
+llm_model = config["models"]["llm"]
 top_k = 2
 
 query = "What are the assumptions of linear regression?"

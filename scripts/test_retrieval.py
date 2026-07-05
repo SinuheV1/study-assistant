@@ -1,9 +1,11 @@
 from src.retrieval.retriever import print_retrieval_results, retrieve_relevant_chunks
+from src.utils.config import load_config
 from src.vector_store.vectordb import get_or_create_collection, initialize_vector_db
 
-persist_directory = "data/processed/vector_store"
-collection_name = "study_assistant_chunks"
-model_name = "all-MiniLM-L6-v2"
+config = load_config()
+persist_directory = config["paths"]["persist_dir"]
+collection_name = config["vector_store"]["collection_name"]
+model_name = config["models"]["embedding"]
 top_k = 2
 
 query = "What are the assumptions of linear regression?"

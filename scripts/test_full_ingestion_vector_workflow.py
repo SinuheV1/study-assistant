@@ -1,6 +1,7 @@
 from src.chunking.chunker import chunk_document
 from src.embedding.embedder import embed_chunks
-from src.ingestion.ingest_text import main as ingest_text
+from src.ingestion.ingest_text import ingest_text_document
+from src.utils.config import PROJECT_ROOT, load_config
 from src.vector_store.vectordb import (
     add_records_to_collection,
     get_collection_count,
@@ -10,16 +11,17 @@ from src.vector_store.vectordb import (
 
 file_path = "data/raw/lecture_transcripts/example_ingestion_test_messy.txt"
 
-persist_directory = "data/processed/vector_store"
-collection_name = "study_assistant_chunks"
-embedding_model = "all-MiniLM-L6-v2"
+config = load_config()
+persist_directory = PROJECT_ROOT / "data" / "processed" / "vector_store_smoke"
+collection_name = config["vector_store"]["collection_name"]
+embedding_model = config["models"]["embedding"]
 
-target_size = 400
-overlap_size = 100
+target_size = config["chunking"]["target_size"]
+overlap_size = config["chunking"]["overlap_size"]
 
 
 # step 1 ingest and clean
-ingestion_result = ingest_text(file_path)
+ingestion_result = ingest_text_document(file_path)
 cleaned_text = ingestion_result["cleaned_text"]
 metadata = ingestion_result["metadata"]
 
