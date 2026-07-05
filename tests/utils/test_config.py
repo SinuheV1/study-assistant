@@ -19,11 +19,15 @@ class ConfigTest(unittest.TestCase):
         with patch.dict(os.environ, clean_env(), clear=True):
             config = load_config()
 
+        processed_dir = Path("data") / "processed"
         self.assertEqual(
             config["paths"]["persist_dir"],
-            PROJECT_ROOT / "data/processed/vector_store",
+            PROJECT_ROOT / processed_dir / "vector_store",
         )
-        self.assertEqual(config["paths"]["chunk_dir"], PROJECT_ROOT / "data/processed/chunks")
+        self.assertEqual(
+            config["paths"]["chunk_dir"],
+            PROJECT_ROOT / processed_dir / "chunks",
+        )
         self.assertEqual(config["models"]["embedding"], "qwen3-embedding:4b")
         self.assertEqual(config["models"]["llm"], "qwen3.6:27b")
         self.assertEqual(config["models"]["reranker"], "mixedbread-ai/mxbai-rerank-base-v1")
@@ -60,8 +64,8 @@ class ConfigTest(unittest.TestCase):
 paths:
   persist_dir: relative/vector_store
   chunk_dir: /tmp/chunks
-  extracted_text_dir: data/processed/extracted_texts
-  embeddings_dir: data/processed/embeddings
+  extracted_text_dir: relative/extracted_texts
+  embeddings_dir: relative/embeddings
   evaluation_queries: evaluation/queries.json
 models:
   embedding: qwen3-embedding:4b
