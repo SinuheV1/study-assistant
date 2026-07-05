@@ -1,12 +1,12 @@
 import hashlib
 import re
-from typing import Any
 from pathlib import Path
+from typing import Any
+
 import nltk
 from nltk.tokenize import sent_tokenize
 
 from src.utils.logging import setup_logger
-
 
 log = setup_logger(__name__)
 
@@ -213,9 +213,7 @@ def extract_page_blocks(
         page_blocks = []
 
         for i, match in enumerate(matches):
-            page_number_text = next(
-                group for group in match.groups() if group is not None
-            )
+            page_number_text = next(group for group in match.groups() if group is not None)
             page_number = int(page_number_text)
 
             start = match.end()
@@ -320,9 +318,7 @@ def heading_is_chapter(heading: str) -> bool:
     if not heading:
         return False
 
-    return bool(
-        re.match(r"^(chapter|ch\.)\s+\d+", heading, flags=re.IGNORECASE)
-    )
+    return bool(re.match(r"^(chapter|ch\.)\s+\d+", heading, flags=re.IGNORECASE))
 
 
 def build_textbook_units(page_blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -413,11 +409,7 @@ def finalize_textbook_chunk(units: list[dict[str, Any]]) -> dict[str, Any]:
     """
     chunk_text = " ".join(unit.get("text", "") for unit in units).strip()
 
-    known_pages = [
-        unit.get("page")
-        for unit in units
-        if isinstance(unit.get("page"), int)
-    ]
+    known_pages = [unit.get("page") for unit in units if isinstance(unit.get("page"), int)]
 
     chapters = []
     sections = []
@@ -476,16 +468,9 @@ def build_chunks_from_units(
         unit_length = len(unit_text)
         unit_section = unit.get("section", "Unknown")
 
-        section_changed = (
-            current_section is not None
-            and unit_section != current_section
-        )
+        section_changed = current_section is not None and unit_section != current_section
 
-        if (
-            section_changed
-            and current_units
-            and current_length >= min_chunk_size
-        ):
+        if section_changed and current_units and current_length >= min_chunk_size:
             chunks.append(finalize_textbook_chunk(current_units))
 
             overlap_units = get_sentence_overlap_units(

@@ -1,51 +1,54 @@
-from src.utils.logging import setup_logger
-from src.chunking.textbook_chunker import chunk_textbook_pdf
-import re
-import string
 import hashlib
-import os
 import json
+import os
+import re
 
+from src.chunking.textbook_chunker import chunk_textbook_pdf
+from src.utils.logging import setup_logger
 
 log = setup_logger(__name__)
-def _weird_capitalization(text:str) -> str:
-    #checking for any lowercase character followed by uppercase
-    if re.search(r'[a-z][A-Z]',text):
+
+
+def _weird_capitalization(text: str) -> str:
+    # checking for any lowercase character followed by uppercase
+    if re.search(r"[a-z][A-Z]", text):
         return True
-    #split words and check if end in lowercase but contains uppercase
+    # split words and check if end in lowercase but contains uppercase
     for word in text.split():
         if any(c.isupper() for c in word[1:]) and not word.isupper():
             return True
     return False
-    
-def split_into_blocks(text:str) ->list[str]:
+
+
+def split_into_blocks(text: str) -> list[str]:
     """
     Split cleaned text into logical blocks using double newlines as separators.
-    
+
     Args:
         text: Cleaned document text.
     Returns:
         List of non-empty text blocks.
     """
-    #normalize tabs, repeated spaces, and blocks of blank lines
+    # normalize tabs, repeated spaces, and blocks of blank lines
     normalized_lines = [line.rstrip() for line in text.splitlines()]
     normalized_text = "\n".join(normalized_lines)
-    
-    #split text into sections using double newline as primary seperator
-    sections=re.split(r'\n\s*\n',normalized_text)
-    blocks=[]
-    
+
+    # split text into sections using double newline as primary seperator
+    sections = re.split(r"\n\s*\n", normalized_text)
+    blocks = []
+
     for section in sections:
-        #strip leading/trailing whitespace
-        section=section.strip()
-        #if section is empty continue, else append to blocks
+        # strip leading/trailing whitespace
+        section = section.strip()
+        # if section is empty continue, else append to blocks
         if not section:
             continue
         blocks.append(section)
-        
+
     return blocks
 
-def is_heading(block:str) ->bool:
+
+def is_heading(block: str) -> bool:
     """
     Heuristic to detect whether a block is a section heading.
     A heading is short, non-empty, not a list item, and does not end
@@ -60,13 +63,13 @@ def is_heading(block:str) ->bool:
 
     if not stripped_block:
         return False
-    if re.search(r'<!--',stripped_block):
+    if re.search(r"<!--", stripped_block):
         return False
-    if not re.search(r'\s', stripped_block) and _weird_capitalization(stripped_block):
+    if not re.search(r"\s", stripped_block) and _weird_capitalization(stripped_block):
         return False
-    if not re.search(r'\s',stripped_block) and len(stripped_block) > 15:
+    if not re.search(r"\s", stripped_block) and len(stripped_block) > 15:
         return False
-    if re.search(r'^#{1,6}\s',stripped_block):
+    if re.search(r"^#{1,6}\s", stripped_block):
         return True
     list_pattern = r"^\d+[\.\)]\s+|^[-*]\s+"
     if re.match(list_pattern, stripped_block):
@@ -78,12 +81,15 @@ def is_heading(block:str) ->bool:
 
     return True
 
+
 def normalize_heading(block):
-    clean_text=re.sub(r'#{1,6}\s','',block)
-    stripped_block=clean_text.strip()
-    stripped_block=re.sub(' +',' ',stripped_block)
+    clean_text = re.sub(r"#{1,6}\s", "", block)
+    stripped_block = clean_text.strip()
+    stripped_block = re.sub(" +", " ", stripped_block)
     return stripped_block
-def estimate_chunk_size(text:str)->int:
+
+
+def estimate_chunk_size(text: str) -> int:
     """
     Estimate chunk size by raw character count, including whitespace.
     This aligns with how chunks are stored and retrieved, making
@@ -96,6 +102,7 @@ def estimate_chunk_size(text:str)->int:
     """
     return len(text)
 
+
 def split_into_sentences(text: str) -> list[str]:
     """
     Split a text block into individual sentences using punctuation boundaries.
@@ -105,11 +112,13 @@ def split_into_sentences(text: str) -> list[str]:
     Returns:
         List of sentence strings.
     """
-    #split on period/exclamation/question followed by whitespace + capital letter,
-    #or end of string. Keeps the punctuation attached to the preceding sentence.
-    raw = re.split(r'(?<=[.!?])\s+(?=[A-Z])', text.strip())
+    # split on period/exclamation/question followed by whitespace + capital letter,
+    # or end of string. Keeps the punctuation attached to the preceding sentence.
+    raw = re.split(r"(?<=[.!?])\s+(?=[A-Z])", text.strip())
     sentences = [s.strip() for s in raw if s.strip()]
     return sentences
+
+
 def split_oversized_block(block: str, target_size: int, overlap_size: int) -> list[str]:
     """
     Sentence-level fallback splitter for blocks that exceed target_size.
@@ -159,6 +168,7 @@ def split_oversized_block(block: str, target_size: int, overlap_size: int) -> li
 
     return sub_chunks
 
+
 def _trailing_sentences(text: str, overlap_size: int) -> list[str]:
     """
     Return the trailing sentences of text whose combined length fits within
@@ -184,6 +194,8 @@ def _trailing_sentences(text: str, overlap_size: int) -> list[str]:
         selected.insert(0, sentence)
 
     return selected
+
+
 def _get_overlap(text: str, overlap_size: int) -> str:
     """
     Slice overlap text from the end of a chunk, snapping to the nearest
@@ -203,7 +215,7 @@ def _get_overlap(text: str, overlap_size: int) -> str:
     return tail[boundary:].strip() if boundary != -1 else tail
 
 
-def _flush_chunk(current_chunk: str,new_block: str,overlap_size: int,chunks: list[str]) -> str:
+def _flush_chunk(current_chunk: str, new_block: str, overlap_size: int, chunks: list[str]) -> str:
     """
     Commit current_chunk to chunks, then start a new chunk seeded with
     overlap from the end of current_chunk followed by new_block.
@@ -220,21 +232,24 @@ def _flush_chunk(current_chunk: str,new_block: str,overlap_size: int,chunks: lis
     overlap_text = _get_overlap(current_chunk, overlap_size)
     return (overlap_text + "\n\n" + new_block).strip() if overlap_text else new_block
 
-def finalize_chunk(current_chunk_text,current_chunk_sections):
+
+def finalize_chunk(current_chunk_text, current_chunk_sections):
     if not current_chunk_text:
         return None
-    unique_sections=list(dict.fromkeys((current_chunk_sections)))
+    unique_sections = list(dict.fromkeys((current_chunk_sections)))
     if not unique_sections:
-        primary_section='Unknown'
+        primary_section = "Unknown"
     else:
-        primary_section=current_chunk_sections[-1]
-    chunk_object={
-        'text':current_chunk_text,
-        'section':primary_section,
-        'sections':unique_sections}
+        primary_section = current_chunk_sections[-1]
+    chunk_object = {
+        "text": current_chunk_text,
+        "section": primary_section,
+        "sections": unique_sections,
+    }
     return chunk_object
 
-def build_chunks_from_blocks(blocks: list[str],target_size: int,overlap_size: int) -> list[dict]:
+
+def build_chunks_from_blocks(blocks: list[str], target_size: int, overlap_size: int) -> list[dict]:
     """
     Assemble logical blocks into retrieval-friendly chunks. Attempts to keep
     headings attached to their following content. Blocks that exceed target_size
@@ -249,52 +264,59 @@ def build_chunks_from_blocks(blocks: list[str],target_size: int,overlap_size: in
     """
     chunks: list[dict] = []
     current_chunk_text = ""
-    current_chunk_sections: list[str]=[]
-    current_section='Unknown'
+    current_chunk_sections: list[str] = []
+    current_section = "Unknown"
     pending_heading = None
 
     for block in blocks:
-
         if is_heading(block):
-            current_section=normalize_heading(block)
-            pending_heading=block
+            current_section = normalize_heading(block)
+            pending_heading = block
             continue
         if pending_heading:
-            content=pending_heading + '\n\n' + block
-            pending_heading=None
+            content = pending_heading + "\n\n" + block
+            pending_heading = None
         else:
-            content=block
-        content_section=current_section
+            content = block
+        content_section = current_section
         if estimate_chunk_size(content) > target_size:
-            sub_blocks=split_oversized_block(content,target_size,overlap_size)
+            sub_blocks = split_oversized_block(content, target_size, overlap_size)
         else:
-            sub_blocks=[content]
-            
+            sub_blocks = [content]
+
         for sub_block in sub_blocks:
-                if not current_chunk_text:
-                    candidate=sub_block
+            if not current_chunk_text:
+                candidate = sub_block
+            else:
+                candidate = current_chunk_text + "\n\n" + sub_block
+            if estimate_chunk_size(candidate) <= target_size:
+                current_chunk_text = candidate
+                current_chunk_sections.append(content_section)
+            else:
+                chunk_object = finalize_chunk(current_chunk_text, current_chunk_sections)
+                if chunk_object:
+                    chunks.append(chunk_object)
+                overlap_text = _get_overlap(current_chunk_text, overlap_size)
+                if overlap_text:
+                    current_chunk_text = overlap_text + "\n\n" + sub_block
                 else:
-                    candidate = current_chunk_text + "\n\n" + sub_block
-                if estimate_chunk_size(candidate) <= target_size:
-                    current_chunk_text = candidate
-                    current_chunk_sections.append(content_section)
-                else:
-                    chunk_object=finalize_chunk(current_chunk_text,current_chunk_sections)
-                    if chunk_object:
-                        chunks.append(chunk_object)
-                    overlap_text=_get_overlap(current_chunk_text,overlap_size)
-                    if overlap_text:
-                        current_chunk_text=overlap_text + '\n\n' + sub_block
-                    else:
-                        current_chunk_text=sub_block
-                    current_chunk_sections=[content_section]
-        
+                    current_chunk_text = sub_block
+                current_chunk_sections = [content_section]
+
     if current_chunk_text:
-        chunk_object=finalize_chunk(current_chunk_text,current_chunk_sections)
+        chunk_object = finalize_chunk(current_chunk_text, current_chunk_sections)
         chunks.append(chunk_object)
     return chunks
 
-def create_chunk_metadata(document_metadata: dict,chunk_text: str,chunk_index: int,total_chunks: int,section: str, sections: list) -> dict:
+
+def create_chunk_metadata(
+    document_metadata: dict,
+    chunk_text: str,
+    chunk_index: int,
+    total_chunks: int,
+    section: str,
+    sections: list,
+) -> dict:
     """
     Create chunk-level metadata combining parent document metadata with
     chunk-specific fields. Chunk ID is a stable SHA-256 hash of
@@ -312,7 +334,7 @@ def create_chunk_metadata(document_metadata: dict,chunk_text: str,chunk_index: i
     raw_str = f"{document_metadata['document_id']}|{chunk_text}|{chunk_index}"
     hash_object.update(raw_str.encode("utf-8"))
     chunk_id = "chunk_" + hash_object.hexdigest()[:12]
-    
+
     return {
         "chunk_id": chunk_id,
         "document_id": document_metadata["document_id"],
@@ -321,150 +343,186 @@ def create_chunk_metadata(document_metadata: dict,chunk_text: str,chunk_index: i
         "source_type": document_metadata["source_type"],
         "course": document_metadata["course"],
         "title": document_metadata["title"],
-        'section':section,
-        'sections':sections,
+        "section": section,
+        "sections": sections,
         "chunk_index": chunk_index,
         "total_chunks": total_chunks,
-        "chunk_text_length": len(chunk_text)}
+        "chunk_text_length": len(chunk_text),
+    }
 
-def chunk_generic_text(cleaned_text: str,document_metadata: dict,target_size: int,overlap_size: int) -> list[dict]:
+
+def chunk_generic_text(
+    cleaned_text: str, document_metadata: dict, target_size: int, overlap_size: int
+) -> list[dict]:
     blocks = split_into_blocks(cleaned_text)
-    chunk_objects=build_chunks_from_blocks(blocks,target_size,overlap_size)
-    
+    chunk_objects = build_chunks_from_blocks(blocks, target_size, overlap_size)
+
     total_chunks = len(chunk_objects)
 
     chunk_records = []
 
     for index, chunk_object in enumerate(chunk_objects):
-        chunk_text=chunk_object['text']
+        chunk_text = chunk_object["text"]
         chunk_metadata = create_chunk_metadata(
             document_metadata=document_metadata,
             chunk_text=chunk_text,
             chunk_index=index,
             total_chunks=total_chunks,
-            section=chunk_object['section'],
-            sections=chunk_object['sections'])
-        
-        chunk_records.append({
-            "chunk_id": chunk_metadata["chunk_id"],
-            "chunk_text": chunk_text,
-            "metadata": chunk_metadata})
+            section=chunk_object["section"],
+            sections=chunk_object["sections"],
+        )
+
+        chunk_records.append(
+            {
+                "chunk_id": chunk_metadata["chunk_id"],
+                "chunk_text": chunk_text,
+                "metadata": chunk_metadata,
+            }
+        )
 
     if not chunk_records:
-        log.warning(f"No chunks produced for document '{document_metadata.get('document_id', 'unknown')}'. "
-                    "Check that cleaned_text is non-empty.")
+        log.warning(
+            f"No chunks produced for document '{document_metadata.get('document_id', 'unknown')}'. "
+            "Check that cleaned_text is non-empty."
+        )
 
         return chunk_records
 
-    log.info(f"Document '{chunk_records[0]['metadata']['document_id']}' "f"chunked into {total_chunks} chunks.")
-    
+    log.info(
+        f"Document '{chunk_records[0]['metadata']['document_id']}' "
+        f"chunked into {total_chunks} chunks."
+    )
+
     return chunk_records
 
-def chunk_lecture_pdf(cleaned_text: str, document_metadata: dict, target_size: int, overlap_size:int)->list[dict]:
-    '''
+
+def chunk_lecture_pdf(
+    cleaned_text: str, document_metadata: dict, target_size: int, overlap_size: int
+) -> list[dict]:
+    """
     lecture pdf chunker
-    '''
+    """
     return chunk_generic_text(
         cleaned_text=cleaned_text,
         document_metadata=document_metadata,
         target_size=target_size,
-        overlap_size=overlap_size)
-    
-def chunk_youtube_transcript(cleaned_text: str, document_metadata: dict, target_size: int, overlap_size:int)->list[dict]:
-    '''
+        overlap_size=overlap_size,
+    )
+
+
+def chunk_youtube_transcript(
+    cleaned_text: str, document_metadata: dict, target_size: int, overlap_size: int
+) -> list[dict]:
+    """
     placeholder document strategy function
-    '''
-    log.info(f'Using fallback generic chunking for youtube_transcript')
+    """
+    log.info("Using fallback generic chunking for youtube_transcript")
 
     return chunk_generic_text(
         cleaned_text=cleaned_text,
         document_metadata=document_metadata,
         target_size=target_size,
-        overlap_size=overlap_size)
+        overlap_size=overlap_size,
+    )
 
 
-def chunk_textbook_pdf_fallback(cleaned_text: str, document_metadata: dict, target_size: int, overlap_size:int)->list[dict]:
-    '''
+def chunk_textbook_pdf_fallback(
+    cleaned_text: str, document_metadata: dict, target_size: int, overlap_size: int
+) -> list[dict]:
+    """
     placeholder document strategy function
-    '''
-    log.info(f'Using fallback generic chunking for textbook pdf')
-    
+    """
+    log.info("Using fallback generic chunking for textbook pdf")
+
     return chunk_generic_text(
         cleaned_text=cleaned_text,
         document_metadata=document_metadata,
         target_size=target_size,
-        overlap_size=overlap_size)
+        overlap_size=overlap_size,
+    )
 
-def chunk_personal_notes(cleaned_text: str, document_metadata: dict, target_size: int, overlap_size:int)->list[dict]:
-    '''
+
+def chunk_personal_notes(
+    cleaned_text: str, document_metadata: dict, target_size: int, overlap_size: int
+) -> list[dict]:
+    """
     placeholder document strategy function
-    '''
-    log.info(f'Using fallback generic chunking for personal_notes')
+    """
+    log.info("Using fallback generic chunking for personal_notes")
 
     return chunk_generic_text(
         cleaned_text=cleaned_text,
         document_metadata=document_metadata,
         target_size=target_size,
-        overlap_size=overlap_size)
+        overlap_size=overlap_size,
+    )
 
-def chunk_research_paper(cleaned_text: str, document_metadata: dict, target_size: int, overlap_size:int)->list[dict]:
-    '''
+
+def chunk_research_paper(
+    cleaned_text: str, document_metadata: dict, target_size: int, overlap_size: int
+) -> list[dict]:
+    """
     placeholder document strategy function
-    '''
-    log.info('Using fallback generic chunking for research_paper')
+    """
+    log.info("Using fallback generic chunking for research_paper")
 
     return chunk_generic_text(
         cleaned_text=cleaned_text,
         document_metadata=document_metadata,
         target_size=target_size,
-        overlap_size=overlap_size)
-    
-def normalize_source_type(source_type:str)-> str:
-    '''
+        overlap_size=overlap_size,
+    )
+
+
+def normalize_source_type(source_type: str) -> str:
+    """
     normalize source type name for routing
-    '''
+    """
     if not source_type:
-        return 'generic_text'
+        return "generic_text"
 
     source_type = source_type.lower().strip()
-    if source_type in ['lecture_pdf', 'lecture_pdfs', 'lecture']:
-        return 'lecture_pdfs'
+    if source_type in ["lecture_pdf", "lecture_pdfs", "lecture"]:
+        return "lecture_pdfs"
 
-    if source_type in ['youtube', 'youtube_transcript', 'yt_transcript']:
-        return 'youtube_transcript'
+    if source_type in ["youtube", "youtube_transcript", "yt_transcript"]:
+        return "youtube_transcript"
 
-    if source_type in ['textbook', 'textbook_pdf']:
-        return 'textbook_pdf'
+    if source_type in ["textbook", "textbook_pdf"]:
+        return "textbook_pdf"
 
-    if source_type in ['notes', 'personal_notes', 'markdown_notes']:
-        return 'personal_notes'
+    if source_type in ["notes", "personal_notes", "markdown_notes"]:
+        return "personal_notes"
 
-    if source_type in ['paper', 'research_paper', 'academic_paper']:
-        return 'research_paper'
+    if source_type in ["paper", "research_paper", "academic_paper"]:
+        return "research_paper"
 
-    return 'generic_text'
+    return "generic_text"
 
 
-def select_chunking_strategy(source_type:str) -> list[dict]:
+def select_chunking_strategy(source_type: str) -> list[dict]:
 
-    if source_type == 'lecture_pdfs':
+    if source_type == "lecture_pdfs":
         return chunk_lecture_pdf
 
-    if source_type == 'youtube_transcript':
+    if source_type == "youtube_transcript":
         return chunk_youtube_transcript
 
-    if source_type == 'textbook_pdf':
+    if source_type == "textbook_pdf":
         return chunk_textbook_pdf
 
-    if source_type == 'personal_notes':
+    if source_type == "personal_notes":
         return chunk_personal_notes
 
-    if source_type == 'research_paper':
+    if source_type == "research_paper":
         return chunk_research_paper
 
     return chunk_generic_text
 
-def chunk_document(cleaned_text: str,document_metadata: dict,target_size: int,overlap_size: int) -> list[dict]:
+
+def chunk_document(
+    cleaned_text: str, document_metadata: dict, target_size: int, overlap_size: int
+) -> list[dict]:
     """
     Main entry point for turning one cleaned document into chunk records.
     Each record contains chunk_id, chunk_text, and metadata.
@@ -487,12 +545,14 @@ def chunk_document(cleaned_text: str,document_metadata: dict,target_size: int,ov
         cleaned_text=cleaned_text,
         document_metadata=document_metadata,
         target_size=target_size,
-        overlap_size=overlap_size)
+        overlap_size=overlap_size,
+    )
 
     if not chunk_records:
-        log.warning(f'No chunk records returned. ')
+        log.warning("No chunk records returned. ")
 
     return chunk_records
+
 
 def save_chunks(chunk_records: list[dict], output_dir: str) -> None:
     """

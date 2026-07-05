@@ -1,13 +1,12 @@
 import json
 
-from src.vector_store.vectordb import initialize_vector_db, get_or_create_collection
-from src.retrieval.retriever import retrieve_relevant_chunks
 from src.generation.generator import generate_answer
 from src.reranking.reranker import rerank_results
 from src.retrieval.bm25_retriever import load_chunk_records
 from src.retrieval.hybrid_retrieval import hybrid_retrieve
+from src.retrieval.retriever import retrieve_relevant_chunks
 from src.utils.config import load_config
-
+from src.vector_store.vectordb import get_or_create_collection, initialize_vector_db
 
 config = load_config()
 
@@ -154,19 +153,39 @@ def print_summary(label, store):
 
     print("\nPipeline                    Retrieval   Generation")
     print("-------------------------------------------------")
-    print(f"Dense Baseline              {dense_avg_retrieval:.2f}        {dense_avg_generation:.2f}")
-    print(f"Dense + Reranker            {reranked_avg_retrieval:.2f}        {reranked_avg_generation:.2f}")
-    print(f"Hybrid                      {hybrid_avg_retrieval:.2f}        {hybrid_avg_generation:.2f}")
-    print(f"Hybrid + Reranker           {hybrid_reranked_avg_retrieval:.2f}        {hybrid_reranked_avg_generation:.2f}")
+    print(
+        f"Dense Baseline              {dense_avg_retrieval:.2f}        {dense_avg_generation:.2f}"
+    )
+    print(
+        f"Dense + Reranker            {reranked_avg_retrieval:.2f}        {reranked_avg_generation:.2f}"
+    )
+    print(
+        f"Hybrid                      {hybrid_avg_retrieval:.2f}        {hybrid_avg_generation:.2f}"
+    )
+    print(
+        f"Hybrid + Reranker           {hybrid_reranked_avg_retrieval:.2f}        {hybrid_reranked_avg_generation:.2f}"
+    )
 
     print("\nDeltas vs Dense Baseline")
     print("-------------------------------------------------")
-    print(f"Dense + Reranker Retrieval Delta:      {reranked_avg_retrieval - dense_avg_retrieval:+.2f}")
-    print(f"Dense + Reranker Generation Delta:     {reranked_avg_generation - dense_avg_generation:+.2f}")
-    print(f"Hybrid Retrieval Delta:                {hybrid_avg_retrieval - dense_avg_retrieval:+.2f}")
-    print(f"Hybrid Generation Delta:               {hybrid_avg_generation - dense_avg_generation:+.2f}")
-    print(f"Hybrid + Reranker Retrieval Delta:     {hybrid_reranked_avg_retrieval - dense_avg_retrieval:+.2f}")
-    print(f"Hybrid + Reranker Generation Delta:    {hybrid_reranked_avg_generation - dense_avg_generation:+.2f}")
+    print(
+        f"Dense + Reranker Retrieval Delta:      {reranked_avg_retrieval - dense_avg_retrieval:+.2f}"
+    )
+    print(
+        f"Dense + Reranker Generation Delta:     {reranked_avg_generation - dense_avg_generation:+.2f}"
+    )
+    print(
+        f"Hybrid Retrieval Delta:                {hybrid_avg_retrieval - dense_avg_retrieval:+.2f}"
+    )
+    print(
+        f"Hybrid Generation Delta:               {hybrid_avg_generation - dense_avg_generation:+.2f}"
+    )
+    print(
+        f"Hybrid + Reranker Retrieval Delta:     {hybrid_reranked_avg_retrieval - dense_avg_retrieval:+.2f}"
+    )
+    print(
+        f"Hybrid + Reranker Generation Delta:    {hybrid_reranked_avg_generation - dense_avg_generation:+.2f}"
+    )
 
     print("\nTop Result Changes vs Dense")
     print("-------------------------------------------------")
@@ -265,9 +284,7 @@ def run_evaluation():
         reranked_top_chunk = reranked_results[0].get("chunk_id") if reranked_results else None
         hybrid_top_chunk = hybrid_results[0].get("chunk_id") if hybrid_results else None
         hybrid_reranked_top_chunk = (
-            hybrid_reranked_results[0].get("chunk_id")
-            if hybrid_reranked_results
-            else None
+            hybrid_reranked_results[0].get("chunk_id") if hybrid_reranked_results else None
         )
 
         dense_top_changed = dense_top_chunk != reranked_top_chunk

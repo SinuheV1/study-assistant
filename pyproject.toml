@@ -25,7 +25,28 @@ dependencies = [
   "python-dotenv",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*"]
 namespaces = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

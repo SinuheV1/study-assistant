@@ -1,18 +1,16 @@
-from src.utils.logging import setup_logger
-from src.retrieval.retriever import retrieve_relevant_chunks
 from src.retrieval.bm25_retriever import bm25_retrieve
+from src.retrieval.retriever import retrieve_relevant_chunks
+from src.utils.logging import setup_logger
 
 log = setup_logger(__name__)
 
-def normalize_scores(results:list[dict],score_key:str,normalized_key:str)->list[dict]:
+
+def normalize_scores(results: list[dict], score_key: str, normalized_key: str) -> list[dict]:
     if not results:
         return []
-    
+
     results = [result.copy() for result in results]
-    scores = [
-        result.get(score_key)
-        for result in results
-        if result.get(score_key) is not None]
+    scores = [result.get(score_key) for result in results if result.get(score_key) is not None]
 
     if not scores:
         for result in results:
@@ -36,21 +34,22 @@ def normalize_scores(results:list[dict],score_key:str,normalized_key:str)->list[
             result[normalized_key] = (raw_score - min_score) / (max_score - min_score)
 
     return results
-    
-def merge_retrieval_results(dense_results:list[dict],bm25_results:list[dict])->list[dict]:
-    merged={}
-    
+
+
+def merge_retrieval_results(dense_results: list[dict], bm25_results: list[dict]) -> list[dict]:
+    merged = {}
+
     for result in dense_results:
-        chunk_id=result.get('chunk_id')
+        chunk_id = result.get("chunk_id")
         if not chunk_id:
             continue
-        merged[chunk_id]=result.copy()
-        merged[chunk_id]['dense_rank']=result.get('rank')
-        merged[chunk_id]['dense_similarity']=result.get('similarity')
-        merged[chunk_id]['dense_score_norm']=result.get('dense_score_norm',0.0)
-        
+        merged[chunk_id] = result.copy()
+        merged[chunk_id]["dense_rank"] = result.get("rank")
+        merged[chunk_id]["dense_similarity"] = result.get("similarity")
+        merged[chunk_id]["dense_score_norm"] = result.get("dense_score_norm", 0.0)
+
     for result in bm25_results:
-        chunk_id=result.get('chunk_id')
+        chunk_id = result.get("chunk_id")
         if not chunk_id:
             continue
         if chunk_id not in merged:
@@ -59,7 +58,7 @@ def merge_retrieval_results(dense_results:list[dict],bm25_results:list[dict])->l
         merged[chunk_id]["bm25_rank"] = result.get("rank")
         merged[chunk_id]["bm25_score"] = result.get("bm25_score")
         merged[chunk_id]["bm25_score_norm"] = result.get("bm25_score_norm", 0.0)
-        
+
     for result in merged.values():
         result.setdefault("dense_rank", None)
         result.setdefault("dense_similarity", None)
@@ -70,6 +69,7 @@ def merge_retrieval_results(dense_results:list[dict],bm25_results:list[dict])->l
         result.setdefault("bm25_score_norm", 0.0)
 
     return list(merged.values())
+
 
 def is_practice_query(query: str) -> bool:
     query = query.lower()
@@ -87,6 +87,7 @@ def is_practice_query(query: str) -> bool:
     ]
 
     return any(term in query for term in practice_terms)
+
 
 def normalize_section_name(section: str) -> str:
     return " ".join(str(section).strip().lower().split())
@@ -120,6 +121,7 @@ def is_exercise_section(result: dict) -> bool:
 
     return False
 
+
 def filter_exercise_sections(
     results: list[dict],
     query: str,
@@ -135,16 +137,13 @@ def filter_exercise_sections(
     if is_practice_query(query):
         return results
 
-    filtered_results = [
-        result
-        for result in results
-        if not is_exercise_section(result)
-    ]
+    filtered_results = [result for result in results if not is_exercise_section(result)]
 
     if len(filtered_results) >= min_results:
         return filtered_results
 
     return results
+
 
 def get_section_penalty(result: dict, query: str) -> float:
     metadata = result.get("metadata", {})
@@ -173,6 +172,7 @@ def get_section_penalty(result: dict, query: str) -> float:
 
     return 1.0
 
+
 def compute_hybrid_score(merged_results: list[dict], alpha: float, query: str) -> list[dict]:
     for result in merged_results:
         dense_component = result.get("dense_score_norm", 0.0)
@@ -200,34 +200,32 @@ def compute_hybrid_score(merged_results: list[dict], alpha: float, query: str) -
     return scored_results
 
 
-def hybrid_retrieve(query:str,collection,
-                    chunk_records:list[dict],embedding_model:str,
-                    dense_k:int,bm25_k:int,top_k:int,alpha:float) -> list[dict]:
-    
+def hybrid_retrieve(
+    query: str,
+    collection,
+    chunk_records: list[dict],
+    embedding_model: str,
+    dense_k: int,
+    bm25_k: int,
+    top_k: int,
+    alpha: float,
+) -> list[dict]:
+
     dense_results = retrieve_relevant_chunks(
-        query=query,
-        collection=collection,
-        model_name=embedding_model,
-        top_k=dense_k)
-    
+        query=query, collection=collection, model_name=embedding_model, top_k=dense_k
+    )
+
     dense_results = normalize_scores(
-        results=dense_results,
-        score_key='similarity',
-        normalized_key='dense_score_norm')
-    
-    bm25_results=bm25_retrieve(
-        query=query,
-        chunk_records=chunk_records,
-        top_k=bm25_k)
+        results=dense_results, score_key="similarity", normalized_key="dense_score_norm"
+    )
+
+    bm25_results = bm25_retrieve(query=query, chunk_records=chunk_records, top_k=bm25_k)
 
     bm25_results = normalize_scores(
-        results=bm25_results,
-        score_key='bm25_score',
-        normalized_key='bm25_score_norm')
-    
-    merged_results = merge_retrieval_results(
-        dense_results=dense_results,
-        bm25_results=bm25_results)
+        results=bm25_results, score_key="bm25_score", normalized_key="bm25_score_norm"
+    )
+
+    merged_results = merge_retrieval_results(dense_results=dense_results, bm25_results=bm25_results)
 
     scored_results = compute_hybrid_score(
         merged_results=merged_results,
@@ -241,9 +239,8 @@ def hybrid_retrieve(query:str,collection,
         min_results=1,
     )
     log.info(
-        f'Hybrid retrieval returned {min(top_k, len(scored_results))} results '
-        f'from {len(merged_results)} merged candidates.')
-    
-    return scored_results[:top_k]
-    
+        f"Hybrid retrieval returned {min(top_k, len(scored_results))} results "
+        f"from {len(merged_results)} merged candidates."
+    )
 
+    return scored_results[:top_k]

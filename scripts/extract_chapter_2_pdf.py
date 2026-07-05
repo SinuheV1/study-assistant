@@ -1,6 +1,6 @@
 from pathlib import Path
-from pypdf import PdfReader, PdfWriter
 
+from pypdf import PdfReader, PdfWriter
 
 INPUT_PDF = Path("data/raw/textbooks/ISLP_website.pdf")
 OUTPUT_PDF = Path("data/raw/textbooks/ISLP_chapter_2.pdf")
@@ -29,9 +29,7 @@ def extract_pdf_page_range(
         raise ValueError("start_page must be 1 or greater")
 
     if end_page > total_pages:
-        raise ValueError(
-            f"end_page {end_page} exceeds total PDF pages {total_pages}"
-        )
+        raise ValueError(f"end_page {end_page} exceeds total PDF pages {total_pages}")
 
     if start_page > end_page:
         raise ValueError("start_page cannot be greater than end_page")

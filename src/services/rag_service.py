@@ -14,8 +14,8 @@ from src.utils.config import load_config
 from src.utils.logging import setup_logger
 from src.vector_store.vectordb import get_or_create_collection, initialize_vector_db
 
-
 log = setup_logger(__name__)
+
 
 def _settings() -> dict[str, Any]:
     config = load_config()
@@ -223,20 +223,9 @@ def collection_stats_service() -> dict[str, Any]:
 
     documents = _document_records_from_metadatas(metadatas)
     courses = sorted(
-        {
-            str(metadata.get("course"))
-            for metadata in metadatas
-            if metadata.get("course")
-        }
+        {str(metadata.get("course")) for metadata in metadatas if metadata.get("course")}
     )
-    weeks = sorted(
-        {
-            week
-            for metadata in metadatas
-            for week in [_infer_week(metadata)]
-            if week
-        }
-    )
+    weeks = sorted({week for metadata in metadatas for week in [_infer_week(metadata)] if week})
 
     return {
         "collection_name": settings["collection_name"],

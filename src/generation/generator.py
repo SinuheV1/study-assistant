@@ -1,7 +1,9 @@
 import requests
+
 from src.utils.logging import setup_logger
 
 log = setup_logger(__name__)
+
 
 def format_page_range(page_start, page_end):
     """
@@ -67,6 +69,7 @@ Text:
 
     return context_block
 
+
 def build_system_instructions() -> str:
     return """
 You are a study assistant.
@@ -102,6 +105,7 @@ Context:
 Question:
 {query}
 """.strip()
+
 
 def call_ollama(system_instructions, user_message, model_name):
     try:
@@ -142,7 +146,9 @@ def call_ollama(system_instructions, user_message, model_name):
         response = message.get("content", "")
 
         if not response:
-            log.warning(f"Ollama returned an empty response. Full response keys: {list(data.keys())}")
+            log.warning(
+                f"Ollama returned an empty response. Full response keys: {list(data.keys())}"
+            )
             log.warning(f"Done reason: {data.get('done_reason')}")
             return None
 
@@ -151,7 +157,8 @@ def call_ollama(system_instructions, user_message, model_name):
     except Exception as e:
         log.exception(f"Request failed. Reason: {e}")
         return None
-    
+
+
 def generate_answer(query, retrieved_results, model_name):
     if not query:
         log.warning("Query is empty.")
@@ -175,6 +182,7 @@ def generate_answer(query, retrieved_results, model_name):
 
     return format_answer_with_sources(answer, retrieved_results)
 
+
 def strip_llm_sources(answer: str) -> str:
     if not answer:
         return answer
@@ -187,6 +195,7 @@ def strip_llm_sources(answer: str) -> str:
             cleaned = cleaned.split(marker)[0].strip()
 
     return cleaned
+
 
 def format_answer_with_sources(answer, retrieved_results):
     if not answer:

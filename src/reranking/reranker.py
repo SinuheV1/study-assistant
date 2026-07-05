@@ -1,6 +1,6 @@
-from src.utils.logging import setup_logger
 from sentence_transformers import CrossEncoder
 
+from src.utils.logging import setup_logger
 
 log = setup_logger(__name__)
 _model_cache: dict = {}
@@ -15,10 +15,7 @@ def load_reranker_model(model_name: str):
 
 
 def score_query_chunk_pairs(
-    query: str,
-    retrieved_results: list[dict],
-    reranker_model,
-    batch_size: int = 16
+    query: str, retrieved_results: list[dict], reranker_model, batch_size: int = 16
 ):
     pairs = []
 
@@ -27,29 +24,20 @@ def score_query_chunk_pairs(
 
         if not chunk_text or not chunk_text.strip():
             log.warning(
-                f"Skipping empty chunk during reranking: "
-                f"{result.get('chunk_id', 'unknown')}"
+                f"Skipping empty chunk during reranking: {result.get('chunk_id', 'unknown')}"
             )
             pairs.append([query, ""])
             continue
 
         pairs.append([query, chunk_text])
 
-    scores = reranker_model.predict(
-        pairs,
-        batch_size=batch_size,
-        show_progress_bar=False
-    )
+    scores = reranker_model.predict(pairs, batch_size=batch_size, show_progress_bar=False)
 
     return scores
 
 
 def rerank_results(
-    query: str,
-    retrieved_results: list[dict],
-    model_name: str,
-    top_k: int,
-    batch_size: int = 16
+    query: str, retrieved_results: list[dict], model_name: str, top_k: int, batch_size: int = 16
 ) -> list[dict]:
     """
     Takes the chunks returned by dense/vector retrieval, scores each chunk again
@@ -70,7 +58,7 @@ def rerank_results(
         query=query,
         retrieved_results=retrieved_results,
         reranker_model=model,
-        batch_size=batch_size
+        batch_size=batch_size,
     )
 
     reranked_results = []
@@ -88,16 +76,12 @@ def rerank_results(
         reranked_results.append(result)
 
     reranked_results = sorted(
-        reranked_results,
-        key=lambda x: x.get("rerank_score", float("-inf")),
-        reverse=True
+        reranked_results, key=lambda x: x.get("rerank_score", float("-inf")), reverse=True
     )
 
     for index, result in enumerate(reranked_results, start=1):
         result["rank"] = index
 
-    log.info(
-        f"Reranked {len(retrieved_results)} chunks and returned top {top_k}."
-    )
+    log.info(f"Reranked {len(retrieved_results)} chunks and returned top {top_k}.")
 
     return reranked_results[:top_k]

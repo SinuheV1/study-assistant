@@ -3,20 +3,20 @@
 import json
 from pathlib import Path
 
-from src.utils.logging import setup_logger
-from src.utils.io import save_json
-from src.ingestion.ingest_docling_document import ingest_docling_document
 from src.chunking.chunker import chunk_document
 from src.embedding.embedder import embed_chunks
+from src.generation.generator import generate_answer
+from src.ingestion.ingest_docling_document import ingest_docling_document
+from src.retrieval.retriever import retrieve_relevant_chunks
 from src.utils.config import load_config
+from src.utils.io import save_json
+from src.utils.logging import setup_logger
 from src.vector_store.vectordb import (
+    add_records_to_collection,
+    get_collection_count,
     initialize_vector_db,
     reset_collection,
-    add_records_to_collection,
-    get_collection_count)
-from src.retrieval.retriever import retrieve_relevant_chunks
-from src.generation.generator import generate_answer
-
+)
 
 log = setup_logger(__name__)
 
@@ -40,12 +40,9 @@ vector_store_base_dir = Path("data/processed/vector_store_ab")
 
 
 chunk_configs = {
-    "A_700_50": {
-        "target_size": 700,
-        "overlap_size": 50},
-    "B_900_75": {
-        "target_size": 900,
-        "overlap_size": 75}}
+    "A_700_50": {"target_size": 700, "overlap_size": 50},
+    "B_900_75": {"target_size": 900, "overlap_size": 75},
+}
 
 
 def load_eval_queries(path):
@@ -81,13 +78,10 @@ def evaluate_config(collection, queries, config_name):
         expected_keywords = q.get("expected_keywords", [])
 
         retrieved_results = retrieve_relevant_chunks(
-            query=query,
-            collection=collection,
-            model_name=embedding_model,
-            top_k=top_k)
+            query=query, collection=collection, model_name=embedding_model, top_k=top_k
+        )
 
-        combined_chunks = " ".join(
-            result.get("chunk_text", "") for result in retrieved_results)
+        combined_chunks = " ".join(result.get("chunk_text", "") for result in retrieved_results)
 
         retrieval_score = keyword_score(combined_chunks, expected_keywords)
         retrieval_scores.append(retrieval_score)
@@ -96,9 +90,8 @@ def evaluate_config(collection, queries, config_name):
 
         if run_generation:
             answer = generate_answer(
-                query=query,
-                retrieved_results=retrieved_results,
-                model_name=llm_model)
+                query=query, retrieved_results=retrieved_results, model_name=llm_model
+            )
 
         generation_score = keyword_score(answer or "", expected_keywords)
         generation_scores.append(generation_score)
@@ -110,15 +103,20 @@ def evaluate_config(collection, queries, config_name):
                 "expected_keywords": expected_keywords,
                 "retrieval_score": retrieval_score,
                 "generation_score": generation_score,
-                "retrieved_chunks": [{
+                "retrieved_chunks": [
+                    {
                         "rank": result.get("rank"),
                         "chunk_id": result.get("chunk_id"),
                         "distance": result.get("distance"),
                         "similarity": result.get("similarity"),
                         "preview": result.get("chunk_text", "")[:300],
-                        "metadata": result.get("metadata", {})}
-                    for result in retrieved_results],
-                "answer": answer})
+                        "metadata": result.get("metadata", {}),
+                    }
+                    for result in retrieved_results
+                ],
+                "answer": answer,
+            }
+        )
 
         print("\n" + "=" * 80)
         print(f"Config: {config_name}")
@@ -133,7 +131,8 @@ def evaluate_config(collection, queries, config_name):
         "config_name": config_name,
         "avg_retrieval_score": avg_retrieval_score,
         "avg_generation_score": avg_generation_score,
-        "per_query_results": per_query_results}
+        "per_query_results": per_query_results,
+    }
 
 
 def run_chunking_ab_test():
@@ -170,7 +169,8 @@ def run_chunking_ab_test():
             cleaned_text=document["cleaned_text"],
             document_metadata=metadata,
             target_size=target_size,
-            overlap_size=overlap_size)
+            overlap_size=overlap_size,
+        )
 
         if not chunks:
             log.warning(f"No chunks generated for {config_name}. Skipping.")
@@ -184,16 +184,13 @@ def run_chunking_ab_test():
         # -----------------------------
         # Embed
         # -----------------------------
-        embedded_chunks = embed_chunks(
-            chunk_records=chunks,
-            model_name=embedding_model)
+        embedded_chunks = embed_chunks(chunk_records=chunks, model_name=embedding_model)
 
         if not embedded_chunks:
             log.warning(f"No embeddings generated for {config_name}. Skipping.")
             continue
 
-        embeddings_path = (
-            config_artifact_dir / "embeddings" / f"{document_id}_embeddings.json")
+        embeddings_path = config_artifact_dir / "embeddings" / f"{document_id}_embeddings.json"
 
         save_json(embedded_chunks, embeddings_path)
 
@@ -212,9 +209,8 @@ def run_chunking_ab_test():
         # Evaluate
         # -----------------------------
         eval_result = evaluate_config(
-            collection=collection,
-            queries=queries,
-            config_name=config_name)
+            collection=collection, queries=queries, config_name=config_name
+        )
 
         config_result = {
             "config_name": config_name,
@@ -225,11 +221,10 @@ def run_chunking_ab_test():
             "vector_db_count": vector_count,
             "avg_retrieval_score": eval_result["avg_retrieval_score"],
             "avg_generation_score": eval_result["avg_generation_score"],
-            "per_query_results": eval_result["per_query_results"]}
+            "per_query_results": eval_result["per_query_results"],
+        }
 
-        save_json(
-            config_result,
-            results_dir / f"{config_name}_results.json")
+        save_json(config_result, results_dir / f"{config_name}_results.json")
 
         summary_results.append(
             {
@@ -240,7 +235,9 @@ def run_chunking_ab_test():
                 "embedding_count": len(embedded_chunks),
                 "vector_db_count": vector_count,
                 "avg_retrieval_score": eval_result["avg_retrieval_score"],
-                "avg_generation_score": eval_result["avg_generation_score"]})
+                "avg_generation_score": eval_result["avg_generation_score"],
+            }
+        )
 
     # -----------------------------
     # Compare configs
@@ -249,13 +246,9 @@ def run_chunking_ab_test():
         log.warning("No valid A/B test results generated.")
         return None
 
-    winner_by_retrieval = max(
-        summary_results,
-        key=lambda x: x["avg_retrieval_score"])
+    winner_by_retrieval = max(summary_results, key=lambda x: x["avg_retrieval_score"])
 
-    winner_by_generation = max(
-        summary_results,
-        key=lambda x: x["avg_generation_score"])
+    winner_by_generation = max(summary_results, key=lambda x: x["avg_generation_score"])
 
     summary = {
         "experiment_name": "chunking_ab_test",
@@ -266,7 +259,8 @@ def run_chunking_ab_test():
         "run_generation": run_generation,
         "results": summary_results,
         "winner_by_retrieval": winner_by_retrieval,
-        "winner_by_generation": winner_by_generation}
+        "winner_by_generation": winner_by_generation,
+    }
 
     save_json(summary, results_dir / "ab_summary.json")
 

@@ -1,10 +1,11 @@
-from src.utils.logging import setup_logger
-from src.embedding.embedder import load_embedding_model
-from src.vector_store.vectordb import query_collection
 import ollama
 
+from src.embedding.embedder import load_embedding_model
+from src.utils.logging import setup_logger
+from src.vector_store.vectordb import query_collection
 
 log = setup_logger(__name__)
+
 
 def embed_query(query, model_name):
     if not query or not query.strip():
@@ -13,9 +14,7 @@ def embed_query(query, model_name):
 
     model = load_embedding_model(model_name)
 
-    response = ollama.embed(
-        model=model,
-        input=query)
+    response = ollama.embed(model=model, input=query)
 
     query_embedding = response["embeddings"][0]
 
@@ -25,9 +24,11 @@ def embed_query(query, model_name):
 
     return query_embedding
 
+
 def search_vector_store(collection, query_embedding, top_k):
     results = query_collection(collection, query_embedding, top_k)
     return results
+
 
 def format_retrieval_results(raw_results):
     formatted_results = []
@@ -36,11 +37,10 @@ def format_retrieval_results(raw_results):
         raw_results["ids"],
         raw_results["documents"],
         raw_results["metadatas"],
-        raw_results["distances"]
+        raw_results["distances"],
     ):
         for rank, (chunk_id, doc, meta, dist) in enumerate(
-            zip(ids, docs, metadatas, distances),
-            start=1
+            zip(ids, docs, metadatas, distances), start=1
         ):
             similarity = 1 / (1 + dist)
 
@@ -50,12 +50,13 @@ def format_retrieval_results(raw_results):
                 "chunk_text": doc,
                 "metadata": meta,
                 "distance": dist,
-                "similarity": similarity
+                "similarity": similarity,
             }
 
             formatted_results.append(result_record)
 
     return formatted_results
+
 
 def retrieve_relevant_chunks(query, collection, model_name, top_k):
     query_embedding = embed_query(query, model_name)
@@ -69,6 +70,7 @@ def retrieve_relevant_chunks(query, collection, model_name, top_k):
     log.info(f"Number of Chunks retrieved: {len(formatted_results)}")
 
     return formatted_results
+
 
 def print_retrieval_results(results):
     for result in results:

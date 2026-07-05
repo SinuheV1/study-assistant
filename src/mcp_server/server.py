@@ -9,7 +9,6 @@ from src.services.rag_service import (
     search_notes_service,
 )
 
-
 mcp = FastMCP("rag-study-assistant")
 
 
@@ -56,4 +55,3 @@ def search_notes(
 
 if __name__ == "__main__":
     mcp.run()
-
