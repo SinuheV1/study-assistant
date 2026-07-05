@@ -593,8 +593,12 @@ Benefits:
 ### 1. Install dependencies
 
 ```bash
-pip install -r requirements.txt
+direnv allow
+python -m pip install -e .
 ```
+
+Docling and Torch-related packages are large and may take a while to install.
+NLTK `punkt` data is downloaded automatically on first textbook ingestion.
 
 ### 2. Start Ollama
 
