@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 
 import chromadb
+import pytest
 
 from src.ingestion.manifest import (
     compute_file_hash,
@@ -353,3 +354,303 @@ def test_manifest_is_saved_after_each_file_and_at_end(tmp_path, monkeypatch):
 def test_manifest_path_from_config_resolves_to_project_root():
     assert pipeline.manifest_path.is_absolute()
     assert pipeline.manifest_path.name == "ingestion_manifest.json"
+
+
+def test_reset_artifacts_flag_appears_in_help(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["run_ingestion_pipeline.py", "--help"])
+
+    with pytest.raises(SystemExit):
+        pipeline.parse_args()
+
+    output = capsys.readouterr().out
+    assert "--reset-artifacts" in output
+
+
+def test_reset_generated_artifacts_clears_only_configured_artifact_paths(tmp_path, monkeypatch):
+    chunk_dir = tmp_path / "processed" / "chunks"
+    embeddings_dir = tmp_path / "processed" / "embeddings"
+    extracted_text_dir = tmp_path / "processed" / "extracted_texts"
+    bm25_index_dir = tmp_path / "processed" / "bm25_index"
+    manifest_path = tmp_path / "ingestion_manifest.json"
+    raw_dir = tmp_path / "raw"
+
+    for directory in [chunk_dir, embeddings_dir, extracted_text_dir, bm25_index_dir, raw_dir]:
+        directory.mkdir(parents=True)
+        (directory / "artifact.txt").write_text("generated", encoding="utf-8")
+
+    (chunk_dir / "nested").mkdir()
+    (chunk_dir / "nested" / "nested.txt").write_text("generated", encoding="utf-8")
+    manifest_path.write_text("{}", encoding="utf-8")
+    (raw_dir / "source.pdf").write_text("source", encoding="utf-8")
+
+    monkeypatch.setattr(pipeline, "chunks_dir", chunk_dir)
+    monkeypatch.setattr(pipeline, "embeddings_dir", embeddings_dir)
+    monkeypatch.setattr(pipeline, "extracted_text_dir", extracted_text_dir)
+    monkeypatch.setattr(pipeline, "bm25_index_dir", bm25_index_dir)
+    monkeypatch.setattr(pipeline, "manifest_path", manifest_path)
+
+    assert pipeline.reset_generated_artifacts()
+
+    assert chunk_dir.exists()
+    assert list(chunk_dir.iterdir()) == []
+    assert embeddings_dir.exists()
+    assert list(embeddings_dir.iterdir()) == []
+    assert extracted_text_dir.exists()
+    assert list(extracted_text_dir.iterdir()) == []
+    assert not bm25_index_dir.exists()
+    assert not manifest_path.exists()
+    assert raw_dir.exists()
+    assert (raw_dir / "source.pdf").exists()
+
+
+def test_reset_artifacts_refuses_path_equal_to_data_raw(tmp_path, monkeypatch):
+    project_root = tmp_path / "project"
+    raw_dir = project_root / "data" / "raw"
+    chunk_dir = project_root / "data" / "processed" / "chunks"
+    embeddings_dir = project_root / "data" / "processed" / "embeddings"
+    extracted_text_dir = project_root / "data" / "processed" / "extracted_texts"
+    bm25_index_dir = project_root / "data" / "processed" / "bm25_index"
+    manifest_path = project_root / "data" / "ingestion_manifest.json"
+
+    for directory in [raw_dir, chunk_dir, embeddings_dir, extracted_text_dir, bm25_index_dir]:
+        directory.mkdir(parents=True)
+        (directory / "artifact.txt").write_text("keep me", encoding="utf-8")
+
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text("{}", encoding="utf-8")
+    (raw_dir / "source.pdf").write_text("source", encoding="utf-8")
+
+    monkeypatch.setattr(pipeline, "PROJECT_ROOT", project_root)
+    monkeypatch.setattr(pipeline, "chunks_dir", raw_dir)
+    monkeypatch.setattr(pipeline, "embeddings_dir", embeddings_dir)
+    monkeypatch.setattr(pipeline, "extracted_text_dir", extracted_text_dir)
+    monkeypatch.setattr(pipeline, "bm25_index_dir", bm25_index_dir)
+    monkeypatch.setattr(pipeline, "manifest_path", manifest_path)
+
+    assert not pipeline.reset_generated_artifacts()
+    assert (raw_dir / "source.pdf").exists()
+    assert (embeddings_dir / "artifact.txt").exists()
+    assert (extracted_text_dir / "artifact.txt").exists()
+    assert bm25_index_dir.exists()
+    assert manifest_path.exists()
+
+
+def test_reset_artifacts_refuses_path_inside_data_raw(tmp_path, monkeypatch):
+    project_root = tmp_path / "project"
+    raw_dir = project_root / "data" / "raw"
+    unsafe_inside_raw = raw_dir / "nested"
+    chunk_dir = project_root / "data" / "processed" / "chunks"
+    embeddings_dir = project_root / "data" / "processed" / "embeddings"
+    extracted_text_dir = project_root / "data" / "processed" / "extracted_texts"
+    bm25_index_dir = project_root / "data" / "processed" / "bm25_index"
+    manifest_path = project_root / "data" / "ingestion_manifest.json"
+
+    for directory in [
+        raw_dir,
+        unsafe_inside_raw,
+        chunk_dir,
+        embeddings_dir,
+        extracted_text_dir,
+        bm25_index_dir,
+    ]:
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "artifact.txt").write_text("keep me", encoding="utf-8")
+
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text("{}", encoding="utf-8")
+    (unsafe_inside_raw / "source.md").write_text("source", encoding="utf-8")
+
+    monkeypatch.setattr(pipeline, "PROJECT_ROOT", project_root)
+    monkeypatch.setattr(pipeline, "chunks_dir", chunk_dir)
+    monkeypatch.setattr(pipeline, "embeddings_dir", unsafe_inside_raw)
+    monkeypatch.setattr(pipeline, "extracted_text_dir", extracted_text_dir)
+    monkeypatch.setattr(pipeline, "bm25_index_dir", bm25_index_dir)
+    monkeypatch.setattr(pipeline, "manifest_path", manifest_path)
+
+    assert not pipeline.reset_generated_artifacts()
+    assert (unsafe_inside_raw / "source.md").exists()
+    assert (chunk_dir / "artifact.txt").exists()
+    assert (extracted_text_dir / "artifact.txt").exists()
+    assert bm25_index_dir.exists()
+    assert manifest_path.exists()
+
+
+def test_reset_artifacts_aborts_without_partial_delete_when_one_target_is_unsafe(
+    tmp_path, monkeypatch
+):
+    project_root = tmp_path / "project"
+    raw_dir = project_root / "data" / "raw"
+    chunk_dir = project_root / "data" / "processed" / "chunks"
+    embeddings_dir = project_root / "data" / "processed" / "embeddings"
+    extracted_text_dir = project_root / "data" / "processed" / "extracted_texts"
+    bm25_index_dir = project_root / "data" / "processed" / "bm25_index"
+    manifest_path = project_root / "data" / "ingestion_manifest.json"
+
+    for directory in [raw_dir, chunk_dir, embeddings_dir, extracted_text_dir, bm25_index_dir]:
+        directory.mkdir(parents=True)
+        (directory / "artifact.txt").write_text("keep me", encoding="utf-8")
+
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text("{}", encoding="utf-8")
+    (raw_dir / "source.txt").write_text("source", encoding="utf-8")
+
+    monkeypatch.setattr(pipeline, "PROJECT_ROOT", project_root)
+    monkeypatch.setattr(pipeline, "chunks_dir", chunk_dir)
+    monkeypatch.setattr(pipeline, "embeddings_dir", embeddings_dir)
+    monkeypatch.setattr(pipeline, "extracted_text_dir", extracted_text_dir)
+    monkeypatch.setattr(pipeline, "bm25_index_dir", raw_dir)
+    monkeypatch.setattr(pipeline, "manifest_path", manifest_path)
+
+    assert not pipeline.reset_generated_artifacts()
+    assert (chunk_dir / "artifact.txt").exists()
+    assert (embeddings_dir / "artifact.txt").exists()
+    assert (extracted_text_dir / "artifact.txt").exists()
+    assert (bm25_index_dir / "artifact.txt").exists()
+    assert manifest_path.exists()
+    assert (raw_dir / "source.txt").exists()
+
+
+@pytest.mark.parametrize(
+    "critical_path",
+    [".git", "src", "configs", "scripts", "docs", "README.md"],
+)
+def test_reset_artifacts_refuses_repo_critical_paths(tmp_path, critical_path):
+    project_root = tmp_path / "project"
+    raw_dir = project_root / "data" / "raw"
+    target = project_root / critical_path
+
+    if target.suffix:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("keep me", encoding="utf-8")
+    else:
+        target.mkdir(parents=True)
+        (target / "keep.txt").write_text("keep me", encoding="utf-8")
+
+    raw_dir.mkdir(parents=True)
+
+    assert not pipeline._is_safe_deletion_target(
+        target,
+        project_root=project_root,
+        raw_dir=raw_dir,
+    )
+
+
+def test_reset_artifacts_cli_aborts_before_delete_or_ingest_for_repo_critical_path(
+    tmp_path, monkeypatch
+):
+    project_root = tmp_path / "project"
+    file_path = tmp_path / "note.txt"
+    file_path.write_text("do not ingest", encoding="utf-8")
+    raw_dir = project_root / "data" / "raw"
+    git_dir = project_root / ".git"
+    embeddings_dir = project_root / "data" / "processed" / "embeddings"
+    extracted_text_dir = project_root / "data" / "processed" / "extracted_texts"
+    bm25_index_dir = project_root / "data" / "processed" / "bm25_index"
+    manifest_path = project_root / "data" / "ingestion_manifest.json"
+
+    for directory in [raw_dir, git_dir, embeddings_dir, extracted_text_dir, bm25_index_dir]:
+        directory.mkdir(parents=True)
+        (directory / "artifact.txt").write_text("keep me", encoding="utf-8")
+
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text("{}", encoding="utf-8")
+
+    def fail_load_vectordb_collection(reset=False):
+        raise AssertionError("reset-artifacts should abort before Chroma reset")
+
+    def fail_process_one_file(*args, **kwargs):
+        raise AssertionError("reset-artifacts should abort before ingestion")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["run_ingestion_pipeline.py", "--file", str(file_path), "--reset-artifacts"],
+    )
+    monkeypatch.setattr(pipeline, "PROJECT_ROOT", project_root)
+    monkeypatch.setattr(pipeline, "chunks_dir", git_dir)
+    monkeypatch.setattr(pipeline, "embeddings_dir", embeddings_dir)
+    monkeypatch.setattr(pipeline, "extracted_text_dir", extracted_text_dir)
+    monkeypatch.setattr(pipeline, "bm25_index_dir", bm25_index_dir)
+    monkeypatch.setattr(pipeline, "manifest_path", manifest_path)
+    monkeypatch.setattr(pipeline, "load_vectordb_collection", fail_load_vectordb_collection)
+    monkeypatch.setattr(pipeline, "process_one_file", fail_process_one_file)
+
+    pipeline.main()
+
+    assert (git_dir / "artifact.txt").exists()
+    assert (embeddings_dir / "artifact.txt").exists()
+    assert (extracted_text_dir / "artifact.txt").exists()
+    assert (bm25_index_dir / "artifact.txt").exists()
+    assert manifest_path.exists()
+    assert raw_dir.exists()
+
+
+def test_reset_artifacts_cli_resets_collection_manifest_and_skip_logic(tmp_path, monkeypatch):
+    project_root = tmp_path / "project"
+    file_path = tmp_path / "note.txt"
+    file_path.write_text("reset artifacts", encoding="utf-8")
+    chunk_dir = project_root / "data" / "processed" / "chunks"
+    embeddings_dir = project_root / "data" / "processed" / "embeddings"
+    extracted_text_dir = project_root / "data" / "processed" / "extracted_texts"
+    bm25_index_dir = project_root / "data" / "processed" / "bm25_index"
+    manifest_path = project_root / "data" / "ingestion_manifest.json"
+    raw_dir = project_root / "data" / "raw"
+    captured = {}
+
+    for directory in [chunk_dir, embeddings_dir, extracted_text_dir, bm25_index_dir, raw_dir]:
+        directory.mkdir(parents=True)
+        (directory / "artifact.txt").write_text("generated", encoding="utf-8")
+
+    manifest_path.write_text('{"documents": {"old": {"status": "success"}}}', encoding="utf-8")
+    (raw_dir / "source.md").write_text("source", encoding="utf-8")
+
+    class FakeCollection:
+        def count(self):
+            return 0
+
+    def fake_load_vectordb_collection(reset=False):
+        captured["reset"] = reset
+        return FakeCollection()
+
+    def fake_process_one_file(file_path, collection, manifest, skip_unchanged=True):
+        captured["manifest"] = manifest
+        captured["skip_unchanged"] = skip_unchanged
+        return {
+            "file_path": str(file_path),
+            "status": "success",
+            "chunks_created": 0,
+            "embeddings_created": 0,
+        }
+
+    def fail_load_manifest(path):
+        raise AssertionError("reset-artifacts should not load the existing manifest")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["run_ingestion_pipeline.py", "--file", str(file_path), "--reset-artifacts"],
+    )
+    monkeypatch.setattr(pipeline, "chunks_dir", chunk_dir)
+    monkeypatch.setattr(pipeline, "embeddings_dir", embeddings_dir)
+    monkeypatch.setattr(pipeline, "extracted_text_dir", extracted_text_dir)
+    monkeypatch.setattr(pipeline, "bm25_index_dir", bm25_index_dir)
+    monkeypatch.setattr(pipeline, "manifest_path", manifest_path)
+    monkeypatch.setattr(pipeline, "PROJECT_ROOT", project_root)
+    monkeypatch.setattr(pipeline, "load_manifest", fail_load_manifest)
+    monkeypatch.setattr(pipeline, "save_manifest", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline, "get_bm25_index", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline, "load_vectordb_collection", fake_load_vectordb_collection)
+    monkeypatch.setattr(pipeline, "process_one_file", fake_process_one_file)
+
+    pipeline.main()
+
+    assert captured["reset"] is True
+    assert captured["skip_unchanged"] is False
+    assert captured["manifest"]["documents"] == {}
+    assert list(chunk_dir.iterdir()) == []
+    assert list(embeddings_dir.iterdir()) == []
+    assert list(extracted_text_dir.iterdir()) == []
+    assert not bm25_index_dir.exists()
+    assert not manifest_path.exists()
+    assert raw_dir.exists()
+    assert (raw_dir / "source.md").exists()

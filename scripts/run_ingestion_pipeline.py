@@ -1,4 +1,5 @@
 import argparse
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,7 @@ from src.ingestion.manifest import (
     update_manifest_record,
 )
 from src.retrieval.bm25_retriever import get_bm25_index
-from src.utils.config import load_config
+from src.utils.config import PROJECT_ROOT, load_config
 from src.utils.io import save_extracted_text, save_json
 from src.utils.logging import setup_logger
 from src.vector_store.vectordb import (
@@ -73,6 +74,11 @@ def parse_args():
         "--reset-manifest",
         action="store_true",
         help="Start this run with an empty ingestion manifest.",
+    )
+    parser.add_argument(
+        "--reset-artifacts",
+        action="store_true",
+        help="Clear generated artifacts for a full local rebuild; typically used with --dir for rebuilding a corpus.",
     )
 
     args = parser.parse_args()
@@ -140,6 +146,152 @@ def load_vectordb_collection(reset: bool = False):
         collection = get_or_create_collection(client, collection_name)
 
     return collection
+
+
+def _resolve_path(path: str | Path) -> Path:
+    return Path(path).expanduser().resolve(strict=False)
+
+
+def _raw_source_dir(project_root: Path = PROJECT_ROOT) -> Path:
+    configured_raw_dir = config.get("paths", {}).get("raw_dir")
+
+    if configured_raw_dir:
+        raw_dir = Path(configured_raw_dir).expanduser()
+        if not raw_dir.is_absolute():
+            raw_dir = project_root / raw_dir
+    else:
+        raw_dir = project_root / "data" / "raw"
+
+    return _resolve_path(raw_dir)
+
+
+def _is_safe_deletion_target(path: Path, *, project_root: Path, raw_dir: Path) -> bool:
+    if not str(path).strip():
+        return False
+
+    try:
+        resolved_path = _resolve_path(path)
+        resolved_project_root = _resolve_path(project_root)
+        resolved_project_data_dir = resolved_project_root / "data"
+        resolved_raw_dir = _resolve_path(raw_dir)
+        home_dir = _resolve_path(Path.home())
+    except (OSError, RuntimeError):
+        return False
+
+    if resolved_path == Path(resolved_path.anchor):
+        return False
+
+    if resolved_path == home_dir:
+        return False
+
+    if resolved_path == resolved_project_root:
+        return False
+
+    if resolved_path in resolved_project_root.parents:
+        return False
+
+    if resolved_project_root in resolved_path.parents:
+        if resolved_project_data_dir not in resolved_path.parents:
+            return False
+
+    if resolved_path == resolved_raw_dir:
+        return False
+
+    if resolved_raw_dir in resolved_path.parents:
+        return False
+
+    return True
+
+
+def _reset_artifact_targets() -> dict[str, Path]:
+    return {
+        "chunk_dir": _resolve_path(chunks_dir),
+        "embeddings_dir": _resolve_path(embeddings_dir),
+        "extracted_text_dir": _resolve_path(extracted_text_dir),
+        "bm25_index_dir": _resolve_path(bm25_index_dir),
+        "manifest_path": _resolve_path(manifest_path),
+    }
+
+
+def _validate_reset_artifact_targets(targets: dict[str, Path]) -> bool:
+    project_root = _resolve_path(PROJECT_ROOT)
+    raw_dir = _raw_source_dir(project_root)
+    unsafe_targets = [
+        (name, path)
+        for name, path in targets.items()
+        if not _is_safe_deletion_target(path, project_root=project_root, raw_dir=raw_dir)
+    ]
+
+    if not unsafe_targets:
+        return True
+
+    log.error("Unsafe --reset-artifacts target detected. Aborting artifact reset.")
+    for name, path in unsafe_targets:
+        log.error(f"Unsafe artifact target refused: {name}={path}")
+
+    return False
+
+
+def _clear_directory_contents(directory_path: str | Path) -> None:
+    directory_path = Path(directory_path)
+
+    if not directory_path.exists():
+        log.info(f"Generated artifact directory does not exist; skipping: {directory_path}")
+        return
+
+    for child in directory_path.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+            log.info(f"Deleted generated artifact directory: {child}")
+        else:
+            child.unlink()
+            log.info(f"Deleted generated artifact file: {child}")
+
+
+def _remove_directory(directory_path: str | Path) -> None:
+    directory_path = Path(directory_path)
+
+    if not directory_path.exists():
+        log.info(f"Generated artifact directory does not exist; skipping: {directory_path}")
+        return
+
+    shutil.rmtree(directory_path)
+    log.info(f"Deleted generated artifact directory: {directory_path}")
+
+
+def _remove_file(file_path: str | Path) -> None:
+    file_path = Path(file_path)
+
+    if not file_path.exists():
+        log.info(f"Generated artifact file does not exist; skipping: {file_path}")
+        return
+
+    if not file_path.is_file():
+        log.info(f"Generated artifact path is not a file; skipping: {file_path}")
+        return
+
+    file_path.unlink()
+    log.info(f"Deleted generated artifact file: {file_path}")
+
+
+def reset_generated_artifacts() -> bool:
+    log.info("Resetting generated ingestion and retrieval artifacts.")
+    targets = _reset_artifact_targets()
+
+    if not _validate_reset_artifact_targets(targets):
+        return False
+
+    for directory_path in [
+        targets["chunk_dir"],
+        targets["embeddings_dir"],
+        targets["extracted_text_dir"],
+    ]:
+        _clear_directory_contents(directory_path)
+
+    _remove_directory(targets["bm25_index_dir"])
+    _remove_file(targets["manifest_path"])
+
+    return True
 
 
 def ingest_document(document: str, file_name: str, collection: str):
@@ -348,16 +500,27 @@ def print_batch_summary(results: list[dict[str, Any]], collection) -> None:
 
 def main():
     args = parse_args()
-    if args.reset_manifest:
+
+    if args.reset_artifacts:
+        if args.file:
+            log.warning(
+                "--reset-artifacts clears generated artifacts for the full corpus; "
+                "with --file, the rebuilt corpus will contain only that file."
+            )
+        if not reset_generated_artifacts():
+            return
+
+    if args.reset_manifest or args.reset_artifacts:
         manifest = create_empty_manifest()
     else:
         manifest = load_manifest(manifest_path)
 
-    skip_unchanged = not (args.force_reingest or args.reset_collection)
-    if args.reset_collection and not args.force_reingest:
-        log.info("Reset collection requested; unchanged-file skip logic is disabled for this run.")
+    reset_collection_requested = args.reset_collection or args.reset_artifacts
+    skip_unchanged = not (args.force_reingest or reset_collection_requested)
+    if reset_collection_requested and not args.force_reingest:
+        log.info("Collection reset requested; unchanged-file skip logic is disabled for this run.")
 
-    collection = load_vectordb_collection(reset=args.reset_collection)
+    collection = load_vectordb_collection(reset=reset_collection_requested)
 
     if args.file:
         file_path = Path(args.file)
