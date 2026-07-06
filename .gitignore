@@ -52,4 +52,4 @@ requirements-lock.txt
 .omp
 
 #claude
-.claude/
+.claude/data/ingestion_manifest.json
