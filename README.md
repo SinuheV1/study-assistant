@@ -177,7 +177,7 @@ File → Extract Text → Clean Text → Chunk → Embed → Store in ChromaDB
 
 ### Ingestion Manifest
 
-The ingestion pipeline includes manifest utilities for repeatable and incremental document ingestion.
+The ingestion pipeline includes manifest utilities that prepare the project for repeatable and incremental document ingestion.
 
 The manifest tracks each ingested document using:
 
@@ -431,9 +431,12 @@ The project supports retrieval experimentation through:
 - metadata-aware retrieval inspection
 - qualitative + quantitative evaluation
 
-Dense Retrieval Baseline
-        vs
-Dense Retrieval + Cross-Encoder Reranking
+Evaluation compares:
+
+- Dense Baseline
+- Dense + Reranker
+- Hybrid
+- Hybrid + Reranker
 
 - retrieval score
 - generation score
@@ -584,7 +587,6 @@ Benefits:
 - Hybrid retrieval significantly improved both retrieval and generation quality on the current corpus.
 - Reranking is most useful after hybrid retrieval, where the candidate pool already contains stronger matches.
 - Dense-only retrieval remains useful as a fast baseline, but it underperformed hybrid retrieval in the latest evaluation.
-- Grouped evaluation is necessary because semantic and lexical queries stress different retrieval behaviors.
 - Keyword-coverage evaluation is useful for early regression testing, but a labeled gold set with rank-aware metrics is needed for stronger retrieval claims.
 - Semantic chunk precision remains a major retrieval bottleneck
 - BM25 improves retrieval for exact lecture terms, formulas, abbreviations, and section names
