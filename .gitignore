@@ -28,6 +28,7 @@ artifacts/debug_outputs/
 data/raw/
 data/processed/
 data/eval/
+data/
 
 #Evaluation results json
 evaluation/results/chunking_ab_test/*_results.json
