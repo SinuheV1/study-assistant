@@ -4,6 +4,39 @@ All notable changes to the Local RAG Study Assistant project will be documented 
 
 ---
 
+## [Unreleased]
+
+### Added
+
+* Shared config via `configs/config.yaml` and `src/utils/config.py`.
+* Editable install via `pyproject.toml`.
+* Pytest suite covering core pure functions and regression checks.
+* Ruff config.
+* GitHub Actions CI for pytest and Ruff.
+* Hermetic Chroma `EphemeralClient` integration test.
+* Post-C1 evaluation results in README.
+
+### Changed
+
+* Eval and smoke workflows now use shared config instead of retired hardcoded model constants.
+* README evaluation results updated to the 2026-07-05 local eval run.
+* Recommended retrieval mode updated to Hybrid / Hybrid + Reranker based on current evaluation.
+* Ruff formatting and import sorting applied.
+
+### Fixed
+
+* Removed stale references to retired `all-MiniLM-L6-v2`, `llama3.2:3b`, and old `ms-marco` reranker strings from scripts and source.
+* Fixed ingestion smoke import from nonexistent `ingest_text.main`.
+* Changed full ingestion smoke to use the throwaway `vector_store_smoke` path.
+* Fixed README Markdown code fence around Retrieval + Generation Flow.
+
+### Notes
+
+* Evaluation results are keyword-coverage based diagnostics, not final scientific benchmarks.
+* Older README eval results are not directly comparable to the new reranker due model/config changes.
+
+---
+
 # 2026-05-13
 
 ## Added

@@ -85,13 +85,15 @@ PDF / TXT / MD
 ```text
 study-assistant/
 │
+├── configs/
+│   └── config.yaml
+│
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+│
 ├── src/
 │   ├── ingestion/
-│   │   ├── ingest_docling_document.py
-│   │   ├── ingest_text.py
-│   │   ├── clean_text.py
-│   │   └── manifest.py
-│   │
 │   ├── chunking/
 │   ├── embedding/
 │   ├── retrieval/
@@ -101,6 +103,7 @@ study-assistant/
 │   ├── mcp_server/
 │   ├── vector_store/
 │   └── utils/
+│       └── config.py
 │
 ├── scripts/
 │   ├── run_ingestion_pipeline.py
@@ -116,8 +119,29 @@ study-assistant/
 │   ├── raw/
 │   ├── processed/
 │   └── ingestion_manifest.json
+│
+├── tests/
+│
+├── pyproject.toml
+├── CHANGELOG.md
 └── README.md
 ```
+
+---
+
+## ⚙️ Configuration
+
+`configs/config.yaml` is the shared source of truth for model names, paths, chunking defaults, retrieval settings, generation settings, and evaluation settings. `src/utils/config.py` loads that config, resolves project-relative paths, and applies the existing `RAG_*` environment variable overrides.
+
+Scripts and services now read from the shared config instead of duplicating hardcoded model and path constants. This keeps evaluation, smoke scripts, and query workflows more reproducible without turning the project into a full production configuration system.
+
+---
+
+## ✅ Testing and CI
+
+The repo includes a pytest suite with 66 passing tests covering chunking, ingestion helpers, manifest logic, retrieval helpers, generation formatting, service helpers, script regression checks, and one Chroma `EphemeralClient` integration test.
+
+Tests are designed to be hermetic where possible and avoid Ollama, real model downloads, network calls, real PDFs, and production vector stores. Ruff is used for linting and formatting, and GitHub Actions runs pytest plus Ruff checks on push and pull request.
 
 ---
 
@@ -206,7 +230,6 @@ ISLP_chapter_2.pdf, K -Nearest Neighbors, pages 22-23
 
 ---
 
-```md
 ## 🔍 Retrieval + Generation Flow
 
 ```text
@@ -231,8 +254,10 @@ Generate Answer with Ollama Chat API
 Append Deterministic Source Citations
     ↓
 Return Answer + Sources
+```
 
 Generation uses Ollama’s /api/chat endpoint with separate system and user messages. System instructions define study-assistant behavior, while the user message contains retrieved context and the question.
+
 ---
 
 ## 💬 Query Pipeline
@@ -612,6 +637,8 @@ Benefits:
 ## 🏁 Getting Started
 
 ### 1. Install dependencies
+
+Use Python 3.12. The local environment is direnv-managed:
 
 ```bash
 direnv allow
