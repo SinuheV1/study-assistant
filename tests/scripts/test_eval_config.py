@@ -236,7 +236,7 @@ def test_default_run_saves_artifact_to_configured_results_dir(tmp_path, monkeypa
     assert len(files) == 1
     saved = json.loads(files[0].read_text(encoding="utf-8"))
     assert artifact["run_id"] == saved["run_id"]
-    assert saved["schema_version"] == "1.0"
+    assert saved["schema_version"] == "1.1"
     assert saved["git"] == {"branch": "test-branch", "commit": "abc123", "dirty": False}
     assert saved["run_options"] == {
         "mode": "full",

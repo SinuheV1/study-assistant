@@ -626,7 +626,7 @@ def build_eval_artifact(
     run_id = f"{timestamp}_{run_slug}" if run_slug else timestamp
 
     return {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "run_id": run_id,
         "created_at": created_at.isoformat(timespec="seconds"),
         "git": git_metadata if git_metadata is not None else get_git_metadata(),

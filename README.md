@@ -475,11 +475,24 @@ Evaluation compares:
 - reranking deltas
 - top-result ranking changes
 
-Run evaluation:
+Run the default full evaluation:
 
 ```bash
 python -m scripts.evaluate_rag
 ```
+
+Full mode is the default and preserves the current behavior: it runs retrieval,
+reranking, generation, retrieval scoring, and generation scoring. Retrieval-only
+mode skips the generation model entirely, so it is much faster for checking
+retrieval quality. It still uses the configured retrieval models and embeddings,
+and may load the reranker when reranker pipelines are selected.
+
+Useful eval controls:
+
+- `--mode full|retrieval`
+- `--limit N`
+- `--group semantic|lexical`
+- `--pipelines dense,dense_reranker,hybrid,hybrid_reranker`
 
 By default, evaluation also saves a timestamped JSON artifact under:
 
@@ -487,15 +500,30 @@ By default, evaluation also saves a timestamped JSON artifact under:
 evaluation/results/
 ```
 
-The terminal summary still prints as before. Saved artifacts include a schema version, run ID, timestamp, git metadata, config/model metadata, summary metrics, grouped metrics, pipeline results, and compact per-query records with source metadata, IDs, and scores. Artifacts avoid full retrieved chunk text to keep files smaller and easier to review.
+The terminal summary still prints as before. Saved artifacts use schema version `1.1` and include a run ID, timestamp, git metadata, config/model metadata, `run_options`, run/pipeline/query timing, summary metrics, grouped metrics, pipeline results, and compact per-query records with source metadata, IDs, scores, and timing. Retrieval-only artifacts store generation scores as `null`. Artifacts avoid full retrieved chunk text to keep files smaller and easier to review.
 
 Examples:
 
 ```bash
 python -m scripts.evaluate_rag
-python -m scripts.evaluate_rag --run-name islp-ch2
+
+python -m scripts.evaluate_rag \
+  --mode retrieval \
+  --limit 5 \
+  --pipelines hybrid,hybrid_reranker \
+  --run-name retrieval-smoke
+
+python -m scripts.evaluate_rag \
+  --mode full \
+  --limit 3 \
+  --pipelines hybrid \
+  --run-name full-smoke
+
+python -m scripts.evaluate_rag \
+  --group semantic \
+  --mode retrieval
+
 python -m scripts.evaluate_rag --no-save-results
-python -m scripts.evaluate_rag --results-dir evaluation/results/dev
 ```
 
 Generated eval artifacts should be committed deliberately only when they are intended as reference runs. Avoid `git add .` for evaluation outputs.

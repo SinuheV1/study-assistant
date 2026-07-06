@@ -542,3 +542,24 @@ Notes:
 
 - Evaluation results are keyword-coverage based diagnostics, not final scientific benchmarks.
 - Older README eval results are not directly comparable to the new reranker due model/config changes.
+
+---
+
+# 2026-07-06
+
+### Added
+
+- Evaluation modes: `--mode full` and `--mode retrieval`.
+- Query filtering with `--limit` and `--group`.
+- Pipeline filtering with `--pipelines`.
+- Run, pipeline, and query-level timing metadata in eval artifacts.
+
+### Changed
+
+- Evaluation artifacts now use schema version `1.1`.
+- Retrieval-only eval skips generation and stores generation scores as null / N/A.
+- Eval artifacts include `run_options` and `timing`.
+
+### Fixed
+
+- Clean git trees now report `dirty: false` in eval artifact metadata instead of `null`.
