@@ -14,6 +14,7 @@ from src.ingestion.manifest import (
     save_manifest,
     update_manifest_record,
 )
+from src.retrieval.bm25_retriever import get_bm25_index
 from src.utils.config import load_config
 from src.utils.io import save_extracted_text, save_json
 from src.utils.logging import setup_logger
@@ -39,6 +40,7 @@ collection_name = config["vector_store"]["collection_name"]
 extracted_text_dir = config["paths"]["extracted_text_dir"]
 chunks_dir = config["paths"]["chunk_dir"]
 embeddings_dir = config["paths"]["embeddings_dir"]
+bm25_index_dir = config["paths"]["bm25_index_dir"]
 SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md"}
 manifest_path = config["paths"]["manifest_path"]
 
@@ -412,6 +414,9 @@ def main():
 
     print_batch_summary(results, collection)
     save_manifest(manifest, manifest_path)
+
+    if any(result.get("status") == "success" for result in results):
+        get_bm25_index(chunk_dir=chunks_dir, index_dir=bm25_index_dir)
 
     log.info("Ingestion pipeline run completed.")
 

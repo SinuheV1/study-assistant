@@ -68,3 +68,10 @@ def test_chunking_ab_test_keeps_isolated_vector_store():
     text = (PROJECT_ROOT / "scripts" / "run_chunking_ab_test.py").read_text(encoding="utf-8")
 
     assert "vector_store_ab" in text
+
+
+def test_chunking_ab_test_does_not_use_production_bm25_cache():
+    text = (PROJECT_ROOT / "scripts" / "run_chunking_ab_test.py").read_text(encoding="utf-8")
+
+    assert "bm25_index_dir" not in text
+    assert "get_bm25_index" not in text

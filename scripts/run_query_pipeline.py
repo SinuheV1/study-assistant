@@ -2,7 +2,7 @@ import argparse
 
 from src.generation.generator import generate_answer
 from src.reranking.reranker import rerank_results
-from src.retrieval.bm25_retriever import load_chunk_records
+from src.retrieval.bm25_retriever import get_bm25_index, load_chunk_records
 from src.retrieval.hybrid_retrieval import hybrid_retrieve
 from src.retrieval.retriever import retrieve_relevant_chunks
 from src.utils.config import load_config
@@ -16,6 +16,7 @@ config = load_config()
 persist_directory = config["paths"]["persist_dir"]
 collection_name = config["vector_store"]["collection_name"]
 chunk_directory = config["paths"]["chunk_dir"]
+bm25_index_directory = config["paths"]["bm25_index_dir"]
 embedding_model = config["models"]["embedding"]
 llm_model = config["models"]["llm"]
 reranker_model = config["models"]["reranker"]
@@ -233,7 +234,11 @@ def run_query_pipeline(args):
     collection = load_vector_collection(args.persist_dir, args.collection)
 
     if args.use_hybrid:
-        chunk_records = load_chunk_records(str(chunk_directory))
+        bm25_index = get_bm25_index(
+            chunk_dir=chunk_directory,
+            index_dir=bm25_index_directory,
+        )
+        chunk_records = bm25_index.records or load_chunk_records(str(chunk_directory))
 
         if args.use_reranker:
             hybrid_top_k = args.candidate_k
@@ -249,6 +254,7 @@ def run_query_pipeline(args):
             bm25_k=args.bm25_k,
             top_k=hybrid_top_k,
             alpha=args.hybrid_alpha,
+            bm25_index=bm25_index,
         )
 
         if args.use_reranker:

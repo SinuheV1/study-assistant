@@ -17,6 +17,7 @@ PATH_KEYS = {
     ("paths", "embeddings_dir"),
     ("paths", "evaluation_queries"),
     ("paths", "manifest_path"),
+    ("paths", "bm25_index_dir"),
 }
 
 ENV_OVERRIDES = {
@@ -24,6 +25,7 @@ ENV_OVERRIDES = {
     "RAG_CHUNK_DIR": ("paths", "chunk_dir"),
     "RAG_COLLECTION_NAME": ("vector_store", "collection_name"),
     "RAG_MANIFEST_PATH": ("paths", "manifest_path"),
+    "RAG_BM25_INDEX_DIR": ("paths", "bm25_index_dir"),
     "RAG_EMBEDDING_MODEL": ("models", "embedding"),
     "RAG_RERANKER_MODEL": ("models", "reranker"),
 }

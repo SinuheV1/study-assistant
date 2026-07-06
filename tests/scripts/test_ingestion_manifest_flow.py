@@ -236,6 +236,7 @@ def test_reset_collection_cli_bypasses_skip_logic(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(pipeline, "load_manifest", lambda path: create_empty_manifest())
     monkeypatch.setattr(pipeline, "save_manifest", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline, "get_bm25_index", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "load_vectordb_collection", fake_load_vectordb_collection)
     monkeypatch.setattr(pipeline, "process_one_file", fake_process_one_file)
 
@@ -271,6 +272,7 @@ def test_reset_manifest_cli_starts_from_empty_manifest(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(pipeline, "load_manifest", fail_load_manifest)
     monkeypatch.setattr(pipeline, "save_manifest", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline, "get_bm25_index", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "load_vectordb_collection", lambda reset=False: FakeCollection())
     monkeypatch.setattr(pipeline, "process_one_file", fake_process_one_file)
 
@@ -338,6 +340,7 @@ def test_manifest_is_saved_after_each_file_and_at_end(tmp_path, monkeypatch):
 
     monkeypatch.setattr(sys, "argv", ["run_ingestion_pipeline.py", "--file", str(file_path)])
     monkeypatch.setattr(pipeline, "manifest_path", manifest_path)
+    monkeypatch.setattr(pipeline, "get_bm25_index", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "load_vectordb_collection", lambda reset=False: _collection())
 
     pipeline.main()

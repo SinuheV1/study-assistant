@@ -1,4 +1,4 @@
-from src.retrieval.bm25_retriever import bm25_retrieve
+from src.retrieval.bm25_retriever import bm25_retrieve, bm25_retrieve_from_index
 from src.retrieval.retriever import retrieve_relevant_chunks
 from src.utils.logging import setup_logger
 
@@ -209,6 +209,7 @@ def hybrid_retrieve(
     bm25_k: int,
     top_k: int,
     alpha: float,
+    bm25_index=None,
 ) -> list[dict]:
 
     dense_results = retrieve_relevant_chunks(
@@ -219,7 +220,14 @@ def hybrid_retrieve(
         results=dense_results, score_key="similarity", normalized_key="dense_score_norm"
     )
 
-    bm25_results = bm25_retrieve(query=query, chunk_records=chunk_records, top_k=bm25_k)
+    if bm25_index is None:
+        bm25_results = bm25_retrieve(query=query, chunk_records=chunk_records, top_k=bm25_k)
+    else:
+        bm25_results = bm25_retrieve_from_index(
+            query=query,
+            index_bundle=bm25_index,
+            top_k=bm25_k,
+        )
 
     bm25_results = normalize_scores(
         results=bm25_results, score_key="bm25_score", normalized_key="bm25_score_norm"

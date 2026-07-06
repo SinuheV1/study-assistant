@@ -7,7 +7,11 @@ from typing import Any
 
 from src.generation.generator import format_page_range
 from src.reranking.reranker import rerank_results
-from src.retrieval.bm25_retriever import load_chunk_records
+from src.retrieval.bm25_retriever import (
+    compute_bm25_fingerprint,
+    get_bm25_index,
+    load_chunk_records,
+)
 from src.retrieval.hybrid_retrieval import hybrid_retrieve
 from src.retrieval.retriever import retrieve_relevant_chunks
 from src.utils.config import load_config
@@ -15,6 +19,7 @@ from src.utils.logging import setup_logger
 from src.vector_store.vectordb import get_or_create_collection, initialize_vector_db
 
 log = setup_logger(__name__)
+_BM25_INDEX_CACHE: dict[tuple[str, str, str], Any] = {}
 
 
 def _settings() -> dict[str, Any]:
@@ -22,6 +27,7 @@ def _settings() -> dict[str, Any]:
     return {
         "persist_dir": config["paths"]["persist_dir"],
         "chunk_dir": config["paths"]["chunk_dir"],
+        "bm25_index_dir": config["paths"]["bm25_index_dir"],
         "collection_name": config["vector_store"]["collection_name"],
         "embedding_model": config["models"]["embedding"],
         "reranker_model": config["models"]["reranker"],
@@ -33,6 +39,24 @@ def _load_collection():
     settings = _settings()
     client = initialize_vector_db(str(settings["persist_dir"]))
     return get_or_create_collection(client, settings["collection_name"])
+
+
+def _get_cached_bm25_index(settings: dict[str, Any]):
+    fingerprint = compute_bm25_fingerprint(settings["chunk_dir"])["fingerprint"]
+    cache_key = (
+        str(settings["chunk_dir"]),
+        str(settings["bm25_index_dir"]),
+        fingerprint,
+    )
+
+    if cache_key not in _BM25_INDEX_CACHE:
+        _BM25_INDEX_CACHE.clear()
+        _BM25_INDEX_CACHE[cache_key] = get_bm25_index(
+            chunk_dir=settings["chunk_dir"],
+            index_dir=settings["bm25_index_dir"],
+        )
+
+    return _BM25_INDEX_CACHE[cache_key]
 
 
 def _infer_week(metadata: dict[str, Any]) -> str | None:
@@ -365,8 +389,8 @@ def search_notes_service(
 
     try:
         if use_hybrid:
-            chunk_records = load_chunk_records(str(settings["chunk_dir"])) or []
             if course or week:
+                chunk_records = load_chunk_records(str(settings["chunk_dir"])) or []
                 chunk_records = [
                     record
                     for record in chunk_records
@@ -376,6 +400,10 @@ def search_notes_service(
                         week=week,
                     )
                 ]
+                bm25_index = None
+            else:
+                bm25_index = _get_cached_bm25_index(settings)
+                chunk_records = bm25_index.records
 
             if not chunk_records:
                 warnings.append(
@@ -397,6 +425,7 @@ def search_notes_service(
                     bm25_k=retrieval_top_k,
                     top_k=retrieval_top_k,
                     alpha=settings["hybrid_alpha"],
+                    bm25_index=bm25_index,
                 )
         else:
             results = retrieve_relevant_chunks(

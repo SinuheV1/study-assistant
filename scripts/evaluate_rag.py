@@ -2,7 +2,7 @@ import json
 
 from src.generation.generator import generate_answer
 from src.reranking.reranker import rerank_results
-from src.retrieval.bm25_retriever import load_chunk_records
+from src.retrieval.bm25_retriever import get_bm25_index, load_chunk_records
 from src.retrieval.hybrid_retrieval import hybrid_retrieve
 from src.retrieval.retriever import retrieve_relevant_chunks
 from src.utils.config import load_config
@@ -13,6 +13,7 @@ config = load_config()
 persist_directory = config["paths"]["persist_dir"]
 collection_name = config["vector_store"]["collection_name"]
 chunk_directory = config["paths"]["chunk_dir"]
+bm25_index_directory = config["paths"]["bm25_index_dir"]
 evaluation_queries_path = config["paths"]["evaluation_queries"]
 
 embed_model = config["models"]["embedding"]
@@ -202,7 +203,11 @@ def run_evaluation():
 
     client = initialize_vector_db(str(persist_directory))
     collection = get_or_create_collection(client, collection_name)
-    chunk_records = load_chunk_records(str(chunk_directory))
+    bm25_index = get_bm25_index(
+        chunk_dir=chunk_directory,
+        index_dir=bm25_index_directory,
+    )
+    chunk_records = bm25_index.records or load_chunk_records(str(chunk_directory))
 
     all_scores = init_score_store()
     semantic_scores = init_score_store()
@@ -252,6 +257,7 @@ def run_evaluation():
             bm25_k=bm25_k,
             top_k=top_k,
             alpha=hybrid_alpha,
+            bm25_index=bm25_index,
         )
 
         hybrid_r_score = score_results(hybrid_results, keywords)
@@ -267,6 +273,7 @@ def run_evaluation():
             bm25_k=bm25_k,
             top_k=candidate_k,
             alpha=hybrid_alpha,
+            bm25_index=bm25_index,
         )
 
         hybrid_reranked_results = rerank_results(
