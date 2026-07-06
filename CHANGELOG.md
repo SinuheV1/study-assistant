@@ -4,39 +4,6 @@ All notable changes to the Local RAG Study Assistant project will be documented 
 
 ---
 
-## [Unreleased]
-
-### Added
-
-* Shared config via `configs/config.yaml` and `src/utils/config.py`.
-* Editable install via `pyproject.toml`.
-* Pytest suite covering core pure functions and regression checks.
-* Ruff config.
-* GitHub Actions CI for pytest and Ruff.
-* Hermetic Chroma `EphemeralClient` integration test.
-* Post-C1 evaluation results in README.
-
-### Changed
-
-* Eval and smoke workflows now use shared config instead of retired hardcoded model constants.
-* README evaluation results updated to the 2026-07-05 local eval run.
-* Recommended retrieval mode updated to Hybrid / Hybrid + Reranker based on current evaluation.
-* Ruff formatting and import sorting applied.
-
-### Fixed
-
-* Removed stale references to retired `all-MiniLM-L6-v2`, `llama3.2:3b`, and old `ms-marco` reranker strings from scripts and source.
-* Fixed ingestion smoke import from nonexistent `ingest_text.main`.
-* Changed full ingestion smoke to use the throwaway `vector_store_smoke` path.
-* Fixed README Markdown code fence around Retrieval + Generation Flow.
-
-### Notes
-
-* Evaluation results are keyword-coverage based diagnostics, not final scientific benchmarks.
-* Older README eval results are not directly comparable to the new reranker due model/config changes.
-
----
-
 # 2026-05-13
 
 ## Added
@@ -532,14 +499,46 @@ Notes:
 
 # 2026-07-05
 
-## Added
+### Added
 
 - Added `configs/config.yaml` as the single source of truth for paths, model names, collection name, chunking defaults, retrieval defaults, and evaluation defaults.
 - Added `src/utils/config.py` config loader with project-root path resolution and existing `RAG_*` environment variable overrides.
 - Added config loader tests.
+- Editable install via `pyproject.toml`.
+- Pytest suite covering core pure functions and regression checks.
+- Ruff config.
+- GitHub Actions CI for pytest and Ruff.
+- Hermetic Chroma `EphemeralClient` integration test.
+- Post-C1 evaluation results in README.
+- Manifest-aware incremental ingestion that skips unchanged successful files and retries failed files.
+- Persisted BM25 index with fingerprint-based invalidation and corrupt-cache self-healing.
+- `--reset-artifacts` flag for safe full local rebuilds of generated ingestion/retrieval artifacts.
+- Versioned evaluation artifacts saved under `evaluation/results/`.
 
-## Changed
+### Changed
 
 - Updated ingestion, query, evaluation, chunking A/B, and service code to read shared config instead of module-level constants.
 - Preserved evaluation-specific defaults: `top_k=3`, `candidate_k=8`.
 - Preserved chunking A/B experiment literals: `700/50` vs `900/75`.
+- Eval and smoke workflows now use shared config instead of retired hardcoded model constants.
+- README evaluation results updated to the 2026-07-05 local eval run.
+- Recommended retrieval mode updated to Hybrid / Hybrid + Reranker based on current evaluation.
+- Ruff formatting and import sorting applied.
+- Hybrid retrieval can reuse a persisted BM25 index instead of rebuilding BM25 every query.
+- Evaluation summaries are now backed by structured JSON artifacts while preserving terminal output.
+- Ingestion reset workflow now has explicit separation between collection reset, manifest reset, force reingest, and full artifact reset.
+
+### Fixed
+
+- Removed stale references to retired `all-MiniLM-L6-v2`, `llama3.2:3b`, and old `ms-marco` reranker strings from scripts and source.
+- Fixed ingestion smoke import from nonexistent `ingest_text.main`.
+- Changed full ingestion smoke to use the throwaway `vector_store_smoke` path.
+- Fixed README Markdown code fence around Retrieval + Generation Flow.
+- Reduced risk of Chroma/BM25 mismatch from stale chunk JSON artifacts after reset.
+- Prevented duplicate vector accumulation during repeated ingestion of unchanged files.
+- Made `--reset-artifacts` refuse unsafe deletion targets and never delete source documents under `data/raw`.
+
+### Notes
+
+- Evaluation results are keyword-coverage based diagnostics, not final scientific benchmarks.
+- Older README eval results are not directly comparable to the new reranker due model/config changes.

@@ -113,12 +113,13 @@ study-assistant/
 │
 ├── evaluation/
 │   ├── queries.json
-│   └── results/
+│   └── results/                  # generated/reference eval artifacts
 │
 ├── data/
-│   ├── raw/
-│   ├── processed/
-│   └── ingestion_manifest.json
+│   ├── raw/                      # source documents, not generated
+│   ├── processed/                # generated local artifacts
+│   │   └── bm25_index/           # generated BM25 cache
+│   └── ingestion_manifest.json   # generated local manifest
 │
 ├── tests/
 │
@@ -177,7 +178,13 @@ File → Extract Text → Clean Text → Chunk → Embed → Store in ChromaDB
 
 ### Ingestion Manifest
 
-The ingestion pipeline includes manifest utilities that prepare the project for repeatable and incremental document ingestion.
+The ingestion pipeline uses a local manifest at:
+
+```text
+data/ingestion_manifest.json
+```
+
+Successful ingestions are tracked by source file hash. On later runs, unchanged files with a successful manifest record are skipped, failed files are retried, and changed files are reprocessed. For changed documents, old Chroma vectors are replaced only after new parsing, chunking, and embedding succeeds, which avoids dropping the previous working vectors on a failed re-ingestion.
 
 The manifest tracks each ingested document using:
 
@@ -195,7 +202,7 @@ The manifest tracks each ingested document using:
 
 File hashes are computed with SHA-256 over the document contents, not just the file path. This allows the pipeline to detect whether a source file has changed since the last successful ingestion.
 
-This enables future folder-level ingestion behavior such as:
+The manifest supports incremental behavior such as:
 
 ```text
 file unchanged → skip ingestion
@@ -204,7 +211,18 @@ new file       → ingest
 failed status  → retry
 ```
 
-The manifest is designed to support scalable multi-document ingestion without repeatedly reprocessing unchanged PDFs, transcripts, or notes.
+The manifest is local runtime state and should not be committed.
+
+Useful ingestion reset flags:
+
+| Flag | Behavior |
+|---|---|
+| `--force-reingest` | Reprocess files without deleting all generated artifacts |
+| `--reset-manifest` | Start the run with a fresh manifest |
+| `--reset-collection` | Reset the Chroma collection only |
+| `--reset-artifacts` | Safely clear generated chunks, embeddings, extracted texts, BM25 cache, manifest, and reset Chroma for a clean local rebuild |
+
+`--reset-artifacts` never deletes `data/raw` and refuses unsafe deletion targets such as source-document paths or repo-critical directories.
 
 
 ### Textbook PDF Ingestion
@@ -339,6 +357,20 @@ python -m scripts.run_query_pipeline \
 
 ---
 
+### Persisted BM25 Index
+
+Hybrid retrieval uses BM25 lexical retrieval alongside dense vector retrieval. The BM25 index is persisted under:
+
+```text
+data/processed/bm25_index/
+```
+
+This lets hybrid retrieval reuse a saved BM25 index instead of rebuilding BM25 from chunk JSON artifacts on every query. The cache is invalidated using a fingerprint of the chunk artifact files, so missing, stale, or corrupt BM25 cache artifacts rebuild automatically.
+
+Filtered or course-specific retrieval paths can still use ad-hoc filtered BM25 behavior where that preserves current ranking semantics. The BM25 cache is generated local runtime state and should not be committed.
+
+---
+
 ### Recommended Retrieval Modes
 
 
@@ -449,6 +481,25 @@ Run evaluation:
 python -m scripts.evaluate_rag
 ```
 
+By default, evaluation also saves a timestamped JSON artifact under:
+
+```text
+evaluation/results/
+```
+
+The terminal summary still prints as before. Saved artifacts include a schema version, run ID, timestamp, git metadata, config/model metadata, summary metrics, grouped metrics, pipeline results, and compact per-query records with source metadata, IDs, and scores. Artifacts avoid full retrieved chunk text to keep files smaller and easier to review.
+
+Examples:
+
+```bash
+python -m scripts.evaluate_rag
+python -m scripts.evaluate_rag --run-name islp-ch2
+python -m scripts.evaluate_rag --no-save-results
+python -m scripts.evaluate_rag --results-dir evaluation/results/dev
+```
+
+Generated eval artifacts should be committed deliberately only when they are intended as reference runs. Avoid `git add .` for evaluation outputs.
+
 Evaluation uses:
 
 ```text
@@ -479,6 +530,7 @@ Metric: keyword coverage over expected retrieval/generation terms
 ```
 
 > Note: These results replace earlier README tables produced before the shared config migration. Older reranker results are not directly comparable because the project previously used a different reranker/model configuration.
+> Future reference evaluation numbers should come from committed `evaluation/results/*_eval_run.json` artifacts.
 
 #### All Queries
 
@@ -620,13 +672,9 @@ Benefits:
 - Improve hybrid retrieval weighting and query-type routing
 - Add automatic routing between dense and hybrid retrieval
 - Add section-boundary-aware chunking
-- Add saved evaluation result artifacts
 - Query rewriting / expansion
 - Multi-document retrieval
 - Improved reranking strategies
-- Wire ingestion manifest into folder-level ingestion 
-- Add skip-unchanged-file logic to the ingestion pipeline 
-- Add force-reingest and reset-manifest CLI options 
 - Add manifest-aware vector DB cleanup for deleted or renamed files
 - Metadata filtering
 - Better OCR/transcript cleanup
