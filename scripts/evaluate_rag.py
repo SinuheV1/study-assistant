@@ -2,6 +2,7 @@ import argparse
 import json
 import re
 import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -37,14 +38,47 @@ debug = False
 
 PIPELINE_LABELS = {
     "dense": "Dense Baseline",
-    "reranked": "Dense + Reranker",
+    "dense_reranker": "Dense + Reranker",
     "hybrid": "Hybrid",
-    "hybrid_reranked": "Hybrid + Reranker",
+    "hybrid_reranker": "Hybrid + Reranker",
+}
+PIPELINE_ORDER = ["dense", "dense_reranker", "hybrid", "hybrid_reranker"]
+PIPELINE_ALIASES = {
+    "dense": "dense",
+    "dense_reranker": "dense_reranker",
+    "reranked": "dense_reranker",
+    "hybrid": "hybrid",
+    "hybrid_reranker": "hybrid_reranker",
+    "hybrid_reranked": "hybrid_reranker",
 }
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run RAG evaluation.")
+    parser.add_argument(
+        "--mode",
+        choices=("full", "retrieval"),
+        default="full",
+        help="Evaluation mode: full runs generation, retrieval skips generation.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=positive_int,
+        default=None,
+        help="Limit the number of queries evaluated after group filtering.",
+    )
+    parser.add_argument(
+        "--group",
+        choices=("semantic", "lexical"),
+        default=None,
+        help="Evaluate only queries in this group.",
+    )
+    parser.add_argument(
+        "--pipelines",
+        type=parse_pipeline_keys,
+        default=None,
+        help="Comma-separated pipelines: dense,dense_reranker,hybrid,hybrid_reranker.",
+    )
     save_group = parser.add_mutually_exclusive_group()
     save_group.add_argument(
         "--save-results",
@@ -73,6 +107,55 @@ def parse_args():
     return parser.parse_args()
 
 
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("--limit must be greater than zero")
+    return parsed
+
+
+def parse_pipeline_keys(value: str) -> list[str]:
+    requested = [item.strip() for item in value.split(",") if item.strip()]
+    if not requested:
+        raise argparse.ArgumentTypeError("--pipelines must include at least one pipeline")
+
+    parsed = []
+    invalid = []
+    for key in requested:
+        canonical_key = PIPELINE_ALIASES.get(key)
+        if canonical_key is None:
+            invalid.append(key)
+        elif canonical_key not in parsed:
+            parsed.append(canonical_key)
+
+    if invalid:
+        valid = ", ".join(PIPELINE_ORDER)
+        raise argparse.ArgumentTypeError(
+            f"Invalid pipeline key(s): {', '.join(invalid)}. Valid keys: {valid}"
+        )
+
+    return [key for key in PIPELINE_ORDER if key in parsed]
+
+
+def normalize_pipeline_keys(pipelines: str | list[str] | None) -> list[str]:
+    if pipelines is None:
+        return list(PIPELINE_ORDER)
+    if isinstance(pipelines, str):
+        return parse_pipeline_keys(pipelines)
+
+    parsed = parse_pipeline_keys(",".join(pipelines))
+    return parsed
+
+
+def filter_eval_queries(queries: list[dict], group: str | None, limit: int | None) -> list[dict]:
+    if group is not None:
+        queries = [query for query in queries if get_query_group(query["id"]) == group]
+    if limit is not None:
+        queries = queries[:limit]
+
+    return queries
+
+
 def get_query_group(query_id: str) -> str:
     if query_id.startswith("lexical_"):
         return "lexical"
@@ -99,6 +182,20 @@ def safe_average(scores):
         return 0.0
 
     return sum(scores) / len(scores)
+
+
+def optional_average(scores: list[float]) -> float | None:
+    if not scores:
+        return None
+
+    return safe_average(scores)
+
+
+def format_score(value: float | None) -> str:
+    if value is None:
+        return "N/A"
+
+    return f"{value:.2f}"
 
 
 def safe_slug(value: str | None) -> str | None:
@@ -161,72 +258,63 @@ def get_git_metadata() -> dict:
 
 def init_score_store():
     return {
-        "dense_retrieval": [],
-        "dense_generation": [],
-        "reranked_retrieval": [],
-        "reranked_generation": [],
-        "hybrid_retrieval": [],
-        "hybrid_generation": [],
-        "hybrid_reranked_retrieval": [],
-        "hybrid_reranked_generation": [],
-        "dense_reranker_changed_top": 0,
-        "hybrid_changed_top": 0,
-        "hybrid_reranked_changed_top": 0,
+        "scores": {
+            key: {
+                "retrieval": [],
+                "generation": [],
+            }
+            for key in PIPELINE_ORDER
+        },
+        "top_result_changes": {
+            "dense_reranker": 0,
+            "hybrid": 0,
+            "hybrid_reranker": 0,
+        },
         "query_count": 0,
     }
 
 
-def summarize_score_store(store: dict) -> dict:
-    dense_avg_retrieval = safe_average(store["dense_retrieval"])
-    dense_avg_generation = safe_average(store["dense_generation"])
+def summarize_score_store(store: dict, pipeline_keys: list[str] | None = None) -> dict:
+    pipeline_keys = pipeline_keys or list(PIPELINE_ORDER)
+    pipeline_summaries = {}
 
-    reranked_avg_retrieval = safe_average(store["reranked_retrieval"])
-    reranked_avg_generation = safe_average(store["reranked_generation"])
+    for key in pipeline_keys:
+        scores = store["scores"][key]
+        pipeline_summaries[PIPELINE_LABELS[key]] = {
+            "retrieval": optional_average(scores["retrieval"]),
+            "generation": optional_average(scores["generation"]),
+        }
 
-    hybrid_avg_retrieval = safe_average(store["hybrid_retrieval"])
-    hybrid_avg_generation = safe_average(store["hybrid_generation"])
+    dense_summary = pipeline_summaries.get(PIPELINE_LABELS["dense"])
+    dense_retrieval = dense_summary["retrieval"] if dense_summary else None
+    dense_generation = dense_summary["generation"] if dense_summary else None
 
-    hybrid_reranked_avg_retrieval = safe_average(store["hybrid_reranked_retrieval"])
-    hybrid_reranked_avg_generation = safe_average(store["hybrid_reranked_generation"])
+    deltas = {}
+    if dense_retrieval is not None:
+        for key in pipeline_keys:
+            if key == "dense":
+                continue
+
+            summary = pipeline_summaries[PIPELINE_LABELS[key]]
+            retrieval = summary["retrieval"]
+            generation = summary["generation"]
+            deltas[PIPELINE_LABELS[key]] = {
+                "retrieval": retrieval - dense_retrieval if retrieval is not None else None,
+                "generation": (
+                    generation - dense_generation
+                    if generation is not None and dense_generation is not None
+                    else None
+                ),
+            }
 
     return {
         "query_count": store["query_count"],
-        "pipelines": {
-            PIPELINE_LABELS["dense"]: {
-                "retrieval": dense_avg_retrieval,
-                "generation": dense_avg_generation,
-            },
-            PIPELINE_LABELS["reranked"]: {
-                "retrieval": reranked_avg_retrieval,
-                "generation": reranked_avg_generation,
-            },
-            PIPELINE_LABELS["hybrid"]: {
-                "retrieval": hybrid_avg_retrieval,
-                "generation": hybrid_avg_generation,
-            },
-            PIPELINE_LABELS["hybrid_reranked"]: {
-                "retrieval": hybrid_reranked_avg_retrieval,
-                "generation": hybrid_reranked_avg_generation,
-            },
-        },
-        "deltas_vs_dense": {
-            PIPELINE_LABELS["reranked"]: {
-                "retrieval": reranked_avg_retrieval - dense_avg_retrieval,
-                "generation": reranked_avg_generation - dense_avg_generation,
-            },
-            PIPELINE_LABELS["hybrid"]: {
-                "retrieval": hybrid_avg_retrieval - dense_avg_retrieval,
-                "generation": hybrid_avg_generation - dense_avg_generation,
-            },
-            PIPELINE_LABELS["hybrid_reranked"]: {
-                "retrieval": hybrid_reranked_avg_retrieval - dense_avg_retrieval,
-                "generation": hybrid_reranked_avg_generation - dense_avg_generation,
-            },
-        },
+        "pipelines": pipeline_summaries,
+        "deltas_vs_dense": deltas,
         "top_result_changes_vs_dense": {
-            PIPELINE_LABELS["reranked"]: store["dense_reranker_changed_top"],
-            PIPELINE_LABELS["hybrid"]: store["hybrid_changed_top"],
-            PIPELINE_LABELS["hybrid_reranked"]: store["hybrid_reranked_changed_top"],
+            PIPELINE_LABELS[key]: store["top_result_changes"][key]
+            for key in pipeline_keys
+            if key in store["top_result_changes"]
         },
     }
 
@@ -255,48 +343,23 @@ def print_debug_sources(label, results):
 
 def update_store(
     store,
-    dense_r_score,
-    dense_g_score,
-    reranked_r_score,
-    reranked_g_score,
-    hybrid_r_score,
-    hybrid_g_score,
-    hybrid_reranked_r_score,
-    hybrid_reranked_g_score,
-    dense_top_changed,
-    hybrid_top_changed,
-    hybrid_reranked_top_changed,
+    pipeline_results: dict[str, dict],
+    top_changes: dict[str, bool],
 ):
-    store["dense_retrieval"].append(dense_r_score)
-    store["dense_generation"].append(dense_g_score)
+    for pipeline_key, values in pipeline_results.items():
+        store["scores"][pipeline_key]["retrieval"].append(values["retrieval_score"])
+        if values["generation_score"] is not None:
+            store["scores"][pipeline_key]["generation"].append(values["generation_score"])
 
-    store["reranked_retrieval"].append(reranked_r_score)
-    store["reranked_generation"].append(reranked_g_score)
-
-    store["hybrid_retrieval"].append(hybrid_r_score)
-    store["hybrid_generation"].append(hybrid_g_score)
-
-    store["hybrid_reranked_retrieval"].append(hybrid_reranked_r_score)
-    store["hybrid_reranked_generation"].append(hybrid_reranked_g_score)
-
-    if dense_top_changed:
-        store["dense_reranker_changed_top"] += 1
-
-    if hybrid_top_changed:
-        store["hybrid_changed_top"] += 1
-
-    if hybrid_reranked_top_changed:
-        store["hybrid_reranked_changed_top"] += 1
+    for pipeline_key, changed in top_changes.items():
+        if changed and pipeline_key in store["top_result_changes"]:
+            store["top_result_changes"][pipeline_key] += 1
 
     store["query_count"] += 1
 
 
-def print_summary(label, store):
-    summary = summarize_score_store(store)
-    dense = summary["pipelines"][PIPELINE_LABELS["dense"]]
-    reranked = summary["pipelines"][PIPELINE_LABELS["reranked"]]
-    hybrid = summary["pipelines"][PIPELINE_LABELS["hybrid"]]
-    hybrid_reranked = summary["pipelines"][PIPELINE_LABELS["hybrid_reranked"]]
+def print_summary(label, store, pipeline_keys: list[str]):
+    summary = summarize_score_store(store, pipeline_keys)
     deltas = summary["deltas_vs_dense"]
     top_changes = summary["top_result_changes_vs_dense"]
     query_count = store["query_count"]
@@ -305,47 +368,30 @@ def print_summary(label, store):
 
     print("\nPipeline                    Retrieval   Generation")
     print("-------------------------------------------------")
-    print(f"Dense Baseline              {dense['retrieval']:.2f}        {dense['generation']:.2f}")
-    print(
-        f"Dense + Reranker            {reranked['retrieval']:.2f}        {reranked['generation']:.2f}"
-    )
-    print(
-        f"Hybrid                      {hybrid['retrieval']:.2f}        {hybrid['generation']:.2f}"
-    )
-    print(
-        f"Hybrid + Reranker           {hybrid_reranked['retrieval']:.2f}        {hybrid_reranked['generation']:.2f}"
-    )
+    for pipeline_key in pipeline_keys:
+        pipeline_label = PIPELINE_LABELS[pipeline_key]
+        scores = summary["pipelines"][pipeline_label]
+        print(
+            f"{pipeline_label:<28} {format_score(scores['retrieval']):<10} "
+            f"{format_score(scores['generation'])}"
+        )
 
-    print("\nDeltas vs Dense Baseline")
-    print("-------------------------------------------------")
-    print(
-        f"Dense + Reranker Retrieval Delta:      {deltas[PIPELINE_LABELS['reranked']]['retrieval']:+.2f}"
-    )
-    print(
-        f"Dense + Reranker Generation Delta:     {deltas[PIPELINE_LABELS['reranked']]['generation']:+.2f}"
-    )
-    print(
-        f"Hybrid Retrieval Delta:                {deltas[PIPELINE_LABELS['hybrid']]['retrieval']:+.2f}"
-    )
-    print(
-        f"Hybrid Generation Delta:               {deltas[PIPELINE_LABELS['hybrid']]['generation']:+.2f}"
-    )
-    print(
-        f"Hybrid + Reranker Retrieval Delta:     {deltas[PIPELINE_LABELS['hybrid_reranked']]['retrieval']:+.2f}"
-    )
-    print(
-        f"Hybrid + Reranker Generation Delta:    {deltas[PIPELINE_LABELS['hybrid_reranked']]['generation']:+.2f}"
-    )
+    if deltas:
+        print("\nDeltas vs Dense Baseline")
+        print("-------------------------------------------------")
+        for pipeline_label, values in deltas.items():
+            retrieval_delta = values["retrieval"]
+            generation_delta = values["generation"]
+            retrieval_text = f"{retrieval_delta:+.2f}" if retrieval_delta is not None else "N/A"
+            generation_text = f"{generation_delta:+.2f}" if generation_delta is not None else "N/A"
+            print(f"{pipeline_label} Retrieval Delta:      {retrieval_text}")
+            print(f"{pipeline_label} Generation Delta:     {generation_text}")
 
-    print("\nTop Result Changes vs Dense")
-    print("-------------------------------------------------")
-    print(
-        f"Dense + Reranker Changed Top:   {top_changes[PIPELINE_LABELS['reranked']]}/{query_count}"
-    )
-    print(f"Hybrid Changed Top:             {top_changes[PIPELINE_LABELS['hybrid']]}/{query_count}")
-    print(
-        f"Hybrid + Reranker Changed Top:  {top_changes[PIPELINE_LABELS['hybrid_reranked']]}/{query_count}"
-    )
+    if top_changes:
+        print("\nTop Result Changes vs Dense")
+        print("-------------------------------------------------")
+        for pipeline_label, changed_count in top_changes.items():
+            print(f"{pipeline_label} Changed Top:  {changed_count}/{query_count}")
 
 
 def extract_top_sources(results: list[dict], limit: int = 3) -> list[dict]:
@@ -375,16 +421,19 @@ def build_query_artifact_records(
 ) -> list[dict]:
     records = []
 
-    for pipeline_name, values in pipeline_results.items():
+    for pipeline_key, values in pipeline_results.items():
         results = values["results"]
         records.append(
             {
                 "query_id": query_id,
                 "query": query,
                 "group": group,
-                "pipeline": pipeline_name,
+                "pipeline": PIPELINE_LABELS[pipeline_key],
                 "retrieval_score": values["retrieval_score"],
                 "generation_score": values["generation_score"],
+                "retrieval_seconds": values["retrieval_seconds"],
+                "generation_seconds": values["generation_seconds"],
+                "total_seconds": values["total_seconds"],
                 "top_chunk_ids": [
                     result.get("chunk_id") for result in results[:3] if result.get("chunk_id")
                 ],
@@ -395,6 +444,168 @@ def build_query_artifact_records(
     return records
 
 
+def initialize_timing_store(pipeline_keys: list[str]) -> dict:
+    return {
+        PIPELINE_LABELS[key]: {
+            "query_count": 0,
+            "retrieval_seconds": 0.0,
+            "generation_seconds": 0.0,
+            "total_seconds": 0.0,
+        }
+        for key in pipeline_keys
+    }
+
+
+def record_timing(timing_store: dict, pipeline_key: str, values: dict) -> None:
+    pipeline_timing = timing_store[PIPELINE_LABELS[pipeline_key]]
+    pipeline_timing["query_count"] += 1
+    pipeline_timing["retrieval_seconds"] += values["retrieval_seconds"]
+    pipeline_timing["generation_seconds"] += values["generation_seconds"]
+    pipeline_timing["total_seconds"] += values["total_seconds"]
+
+
+def evaluate_pipeline(
+    *,
+    pipeline_key: str,
+    mode: str,
+    query: str,
+    keywords: list[str],
+    collection,
+    chunk_records: list[dict],
+    bm25_index,
+) -> dict:
+    retrieval_started = time.perf_counter()
+
+    if pipeline_key == "dense":
+        results = retrieve_relevant_chunks(
+            query=query,
+            collection=collection,
+            model_name=embed_model,
+            top_k=top_k,
+        )
+    elif pipeline_key == "dense_reranker":
+        candidate_results = retrieve_relevant_chunks(
+            query=query,
+            collection=collection,
+            model_name=embed_model,
+            top_k=candidate_k,
+        )
+        results = rerank_results(
+            query=query,
+            retrieved_results=candidate_results,
+            model_name=reranker_model,
+            top_k=top_k,
+        )
+    elif pipeline_key == "hybrid":
+        results = hybrid_retrieve(
+            query=query,
+            collection=collection,
+            chunk_records=chunk_records,
+            embedding_model=embed_model,
+            dense_k=dense_k,
+            bm25_k=bm25_k,
+            top_k=top_k,
+            alpha=hybrid_alpha,
+            bm25_index=bm25_index,
+        )
+    elif pipeline_key == "hybrid_reranker":
+        hybrid_candidates = hybrid_retrieve(
+            query=query,
+            collection=collection,
+            chunk_records=chunk_records,
+            embedding_model=embed_model,
+            dense_k=dense_k,
+            bm25_k=bm25_k,
+            top_k=candidate_k,
+            alpha=hybrid_alpha,
+            bm25_index=bm25_index,
+        )
+        results = rerank_results(
+            query=query,
+            retrieved_results=hybrid_candidates,
+            model_name=reranker_model,
+            top_k=top_k,
+        )
+    else:
+        raise ValueError(f"Unsupported pipeline: {pipeline_key}")
+
+    retrieval_seconds = time.perf_counter() - retrieval_started
+    retrieval_score = score_results(results, keywords)
+    generation_seconds = 0.0
+    generation_score = None
+
+    if mode == "full":
+        generation_started = time.perf_counter()
+        answer = generate_answer(query, results, llm_model)
+        generation_seconds = time.perf_counter() - generation_started
+        generation_score = keyword_score(answer or "", keywords)
+
+    return {
+        "results": results,
+        "retrieval_score": retrieval_score,
+        "generation_score": generation_score,
+        "retrieval_seconds": retrieval_seconds,
+        "generation_seconds": generation_seconds,
+        "total_seconds": retrieval_seconds + generation_seconds,
+    }
+
+
+def get_top_chunk_id(values: dict | None) -> str | None:
+    if not values:
+        return None
+
+    results = values["results"]
+    return results[0].get("chunk_id") if results else None
+
+
+def get_top_changes(pipeline_results: dict[str, dict]) -> dict[str, bool]:
+    dense_top_chunk = get_top_chunk_id(pipeline_results.get("dense"))
+    if dense_top_chunk is None:
+        return {}
+
+    return {
+        pipeline_key: dense_top_chunk != get_top_chunk_id(pipeline_results.get(pipeline_key))
+        for pipeline_key in ("dense_reranker", "hybrid", "hybrid_reranker")
+        if pipeline_key in pipeline_results
+    }
+
+
+def print_query_results(
+    *,
+    query_id: str,
+    query_group: str,
+    query: str,
+    pipeline_results: dict[str, dict],
+    top_changes: dict[str, bool],
+) -> None:
+    print(f"\nQuery ID: {query_id}")
+    print(f"Group: {query_group}")
+    print(f"Query: {query}")
+
+    for pipeline_key, values in pipeline_results.items():
+        pipeline_label = PIPELINE_LABELS[pipeline_key]
+        print(f"{pipeline_label} Retrieval Score: {values['retrieval_score']:.2f}")
+        print(f"{pipeline_label} Generation Score: {format_score(values['generation_score'])}")
+
+    for pipeline_key, changed in top_changes.items():
+        print(f"{PIPELINE_LABELS[pipeline_key]} Top Changed: {changed}")
+
+
+def print_run_metadata(
+    *,
+    mode: str,
+    query_count: int,
+    pipeline_keys: list[str],
+    total_seconds: float,
+) -> None:
+    print("\n=== EVALUATION RUN ===")
+    print(f"Eval mode: {mode}")
+    print(f"Queries evaluated: {query_count}")
+    print(f"Pipelines: {', '.join(PIPELINE_LABELS[key] for key in pipeline_keys)}")
+    print(f"Generation: {'enabled' if mode == 'full' else 'skipped'}")
+    print(f"Total time: {total_seconds:.2f} seconds")
+
+
 def build_eval_artifact(
     *,
     all_scores: dict,
@@ -402,6 +613,9 @@ def build_eval_artifact(
     lexical_scores: dict,
     query_records: list[dict],
     results_dir: Path,
+    pipeline_keys: list[str],
+    run_options: dict,
+    timing: dict,
     run_name: str | None = None,
     created_at: datetime | None = None,
     git_metadata: dict | None = None,
@@ -434,14 +648,16 @@ def build_eval_artifact(
                 "eval_results_dir": str(results_dir),
             },
         },
+        "run_options": run_options,
+        "timing": timing,
         "summary": {
-            "all": summarize_score_store(all_scores),
+            "all": summarize_score_store(all_scores, pipeline_keys),
             "groups": {
-                "semantic": summarize_score_store(semantic_scores),
-                "lexical": summarize_score_store(lexical_scores),
+                "semantic": summarize_score_store(semantic_scores, pipeline_keys),
+                "lexical": summarize_score_store(lexical_scores, pipeline_keys),
             },
         },
-        "pipelines": list(PIPELINE_LABELS.values()),
+        "pipelines": [PIPELINE_LABELS[key] for key in pipeline_keys],
         "queries": query_records,
     }
 
@@ -463,11 +679,26 @@ def run_evaluation(
     save_results: bool = True,
     results_dir: str | Path | None = None,
     run_name: str | None = None,
+    mode: str = "full",
+    limit: int | None = None,
+    group: str | None = None,
+    pipelines: str | list[str] | None = None,
 ):
+    if mode not in {"full", "retrieval"}:
+        raise ValueError("mode must be 'full' or 'retrieval'")
+    if group not in {None, "semantic", "lexical"}:
+        raise ValueError("group must be 'semantic', 'lexical', or None")
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be greater than zero")
+
+    pipeline_keys = normalize_pipeline_keys(pipelines)
+
     with open(evaluation_queries_path) as f:
         data = json.load(f)
 
-    queries = data["queries"]
+    queries = filter_eval_queries(data["queries"], group, limit)
+    run_started_at = datetime.now()
+    run_started_perf = time.perf_counter()
 
     client = initialize_vector_db(str(persist_directory))
     collection = get_or_create_collection(client, collection_name)
@@ -481,187 +712,83 @@ def run_evaluation(
     semantic_scores = init_score_store()
     lexical_scores = init_score_store()
     query_records = []
+    pipeline_timing = initialize_timing_store(pipeline_keys)
 
     for q in queries:
         query_id = q["id"]
         query = q["query"]
         keywords = q["expected_keywords"]
         query_group = get_query_group(query_id)
+        pipeline_results = {}
 
-        dense_results = retrieve_relevant_chunks(
-            query=query,
-            collection=collection,
-            model_name=embed_model,
-            top_k=top_k,
-        )
+        for pipeline_key in pipeline_keys:
+            pipeline_results[pipeline_key] = evaluate_pipeline(
+                pipeline_key=pipeline_key,
+                mode=mode,
+                query=query,
+                keywords=keywords,
+                collection=collection,
+                chunk_records=chunk_records,
+                bm25_index=bm25_index,
+            )
+            record_timing(pipeline_timing, pipeline_key, pipeline_results[pipeline_key])
 
-        dense_r_score = score_results(dense_results, keywords)
-        dense_answer = generate_answer(query, dense_results, llm_model)
-        dense_g_score = keyword_score(dense_answer or "", keywords)
-
-        candidate_results = retrieve_relevant_chunks(
-            query=query,
-            collection=collection,
-            model_name=embed_model,
-            top_k=candidate_k,
-        )
-
-        reranked_results = rerank_results(
-            query=query,
-            retrieved_results=candidate_results,
-            model_name=reranker_model,
-            top_k=top_k,
-        )
-
-        reranked_r_score = score_results(reranked_results, keywords)
-        reranked_answer = generate_answer(query, reranked_results, llm_model)
-        reranked_g_score = keyword_score(reranked_answer or "", keywords)
-
-        hybrid_results = hybrid_retrieve(
-            query=query,
-            collection=collection,
-            chunk_records=chunk_records,
-            embedding_model=embed_model,
-            dense_k=dense_k,
-            bm25_k=bm25_k,
-            top_k=top_k,
-            alpha=hybrid_alpha,
-            bm25_index=bm25_index,
-        )
-
-        hybrid_r_score = score_results(hybrid_results, keywords)
-        hybrid_answer = generate_answer(query, hybrid_results, llm_model)
-        hybrid_g_score = keyword_score(hybrid_answer or "", keywords)
-
-        hybrid_candidates = hybrid_retrieve(
-            query=query,
-            collection=collection,
-            chunk_records=chunk_records,
-            embedding_model=embed_model,
-            dense_k=dense_k,
-            bm25_k=bm25_k,
-            top_k=candidate_k,
-            alpha=hybrid_alpha,
-            bm25_index=bm25_index,
-        )
-
-        hybrid_reranked_results = rerank_results(
-            query=query,
-            retrieved_results=hybrid_candidates,
-            model_name=reranker_model,
-            top_k=top_k,
-        )
-
-        hybrid_reranked_r_score = score_results(hybrid_reranked_results, keywords)
-        hybrid_reranked_answer = generate_answer(query, hybrid_reranked_results, llm_model)
-        hybrid_reranked_g_score = keyword_score(hybrid_reranked_answer or "", keywords)
-
-        dense_top_chunk = dense_results[0].get("chunk_id") if dense_results else None
-        reranked_top_chunk = reranked_results[0].get("chunk_id") if reranked_results else None
-        hybrid_top_chunk = hybrid_results[0].get("chunk_id") if hybrid_results else None
-        hybrid_reranked_top_chunk = (
-            hybrid_reranked_results[0].get("chunk_id") if hybrid_reranked_results else None
-        )
-
-        dense_top_changed = dense_top_chunk != reranked_top_chunk
-        hybrid_top_changed = dense_top_chunk != hybrid_top_chunk
-        hybrid_reranked_top_changed = dense_top_chunk != hybrid_reranked_top_chunk
-
-        update_store(
-            all_scores,
-            dense_r_score,
-            dense_g_score,
-            reranked_r_score,
-            reranked_g_score,
-            hybrid_r_score,
-            hybrid_g_score,
-            hybrid_reranked_r_score,
-            hybrid_reranked_g_score,
-            dense_top_changed,
-            hybrid_top_changed,
-            hybrid_reranked_top_changed,
-        )
+        top_changes = get_top_changes(pipeline_results)
+        update_store(all_scores, pipeline_results, top_changes)
 
         if query_group == "lexical":
             group_store = lexical_scores
         else:
             group_store = semantic_scores
 
-        update_store(
-            group_store,
-            dense_r_score,
-            dense_g_score,
-            reranked_r_score,
-            reranked_g_score,
-            hybrid_r_score,
-            hybrid_g_score,
-            hybrid_reranked_r_score,
-            hybrid_reranked_g_score,
-            dense_top_changed,
-            hybrid_top_changed,
-            hybrid_reranked_top_changed,
-        )
+        update_store(group_store, pipeline_results, top_changes)
 
         query_records.extend(
             build_query_artifact_records(
                 query_id=query_id,
                 query=query,
                 group=query_group,
-                pipeline_results={
-                    PIPELINE_LABELS["dense"]: {
-                        "results": dense_results,
-                        "retrieval_score": dense_r_score,
-                        "generation_score": dense_g_score,
-                    },
-                    PIPELINE_LABELS["reranked"]: {
-                        "results": reranked_results,
-                        "retrieval_score": reranked_r_score,
-                        "generation_score": reranked_g_score,
-                    },
-                    PIPELINE_LABELS["hybrid"]: {
-                        "results": hybrid_results,
-                        "retrieval_score": hybrid_r_score,
-                        "generation_score": hybrid_g_score,
-                    },
-                    PIPELINE_LABELS["hybrid_reranked"]: {
-                        "results": hybrid_reranked_results,
-                        "retrieval_score": hybrid_reranked_r_score,
-                        "generation_score": hybrid_reranked_g_score,
-                    },
-                },
+                pipeline_results=pipeline_results,
             )
         )
 
-        print(f"\nQuery ID: {query_id}")
-        print(f"Group: {query_group}")
-        print(f"Query: {query}")
-
-        print(f"Dense Retrieval Score: {dense_r_score:.2f}")
-        print(f"Dense Generation Score: {dense_g_score:.2f}")
-
-        print(f"Reranked Retrieval Score: {reranked_r_score:.2f}")
-        print(f"Reranked Generation Score: {reranked_g_score:.2f}")
-
-        print(f"Hybrid Retrieval Score: {hybrid_r_score:.2f}")
-        print(f"Hybrid Generation Score: {hybrid_g_score:.2f}")
-
-        print(f"Hybrid + Reranker Retrieval Score: {hybrid_reranked_r_score:.2f}")
-        print(f"Hybrid + Reranker Generation Score: {hybrid_reranked_g_score:.2f}")
-
-        print(f"Dense + Reranker Top Changed: {dense_top_changed}")
-        print(f"Hybrid Top Changed: {hybrid_top_changed}")
-        print(f"Hybrid + Reranker Top Changed: {hybrid_reranked_top_changed}")
+        print_query_results(
+            query_id=query_id,
+            query_group=query_group,
+            query=query,
+            pipeline_results=pipeline_results,
+            top_changes=top_changes,
+        )
 
         if debug:
-            print_debug_sources("DENSE", dense_results)
-            print_debug_sources("DENSE + RERANKED", reranked_results)
-            print_debug_sources("HYBRID", hybrid_results)
-            print_debug_sources("HYBRID + RERANKED", hybrid_reranked_results)
+            for pipeline_key, values in pipeline_results.items():
+                print_debug_sources(PIPELINE_LABELS[pipeline_key].upper(), values["results"])
 
+    run_finished_at = datetime.now()
+    total_seconds = time.perf_counter() - run_started_perf
+    timing = {
+        "started_at": run_started_at.isoformat(timespec="seconds"),
+        "finished_at": run_finished_at.isoformat(timespec="seconds"),
+        "total_seconds": total_seconds,
+        "pipelines": pipeline_timing,
+    }
+    run_options = {
+        "mode": mode,
+        "limit": limit,
+        "group": group,
+        "pipelines": pipeline_keys,
+    }
+
+    print_run_metadata(
+        mode=mode,
+        query_count=len(queries),
+        pipeline_keys=pipeline_keys,
+        total_seconds=total_seconds,
+    )
     print("\n=== FINAL RESULTS ===")
-    print_summary("All Queries", all_scores)
-    print_summary("Semantic Queries", semantic_scores)
-    print_summary("Lexical / Hybrid Queries", lexical_scores)
+    print_summary("All Queries", all_scores, pipeline_keys)
+    print_summary("Semantic Queries", semantic_scores, pipeline_keys)
+    print_summary("Lexical / Hybrid Queries", lexical_scores, pipeline_keys)
 
     output_dir = Path(results_dir) if results_dir is not None else eval_results_directory
     artifact = build_eval_artifact(
@@ -670,7 +797,11 @@ def run_evaluation(
         lexical_scores=lexical_scores,
         query_records=query_records,
         results_dir=output_dir,
+        pipeline_keys=pipeline_keys,
+        run_options=run_options,
+        timing=timing,
         run_name=run_name,
+        created_at=run_started_at,
     )
 
     if save_results:
@@ -686,4 +817,8 @@ if __name__ == "__main__":
         save_results=args.save_results,
         results_dir=args.results_dir,
         run_name=args.run_name,
+        mode=args.mode,
+        limit=args.limit,
+        group=args.group,
+        pipelines=args.pipelines,
     )

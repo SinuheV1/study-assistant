@@ -118,26 +118,39 @@ def test_evaluate_rag_help_works(monkeypatch, capsys):
         evaluate_rag.parse_args()
 
     output = capsys.readouterr().out
+    assert "--mode" in output
+    assert "--limit" in output
+    assert "--group" in output
+    assert "--pipelines" in output
     assert "--save-results" in output
     assert "--no-save-results" in output
     assert "--results-dir" in output
     assert "--run-name" in output
 
 
-def _patch_fast_evaluation(monkeypatch, tmp_path):
+def test_evaluate_rag_default_args_are_full_mode(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["evaluate_rag.py"])
+
+    args = evaluate_rag.parse_args()
+
+    assert args.mode == "full"
+    assert args.limit is None
+    assert args.group is None
+    assert args.pipelines is None
+    assert args.save_results is True
+
+
+def _patch_fast_evaluation(monkeypatch, tmp_path, queries: list[dict] | None = None):
+    queries = queries or [
+        {
+            "id": "semantic_test",
+            "query": "What is least squares?",
+            "expected_keywords": ["linear", "squares"],
+        }
+    ]
     queries_path = tmp_path / "queries.json"
     queries_path.write_text(
-        json.dumps(
-            {
-                "queries": [
-                    {
-                        "id": "semantic_test",
-                        "query": "What is least squares?",
-                        "expected_keywords": ["linear", "squares"],
-                    }
-                ]
-            }
-        ),
+        json.dumps({"queries": queries}),
         encoding="utf-8",
     )
     result = {
@@ -153,6 +166,28 @@ def _patch_fast_evaluation(monkeypatch, tmp_path):
         },
         "similarity": 0.9,
     }
+    calls = {
+        "retrieve": [],
+        "rerank": [],
+        "hybrid": [],
+        "generate": [],
+    }
+
+    def fake_retrieve(**kwargs):
+        calls["retrieve"].append(kwargs)
+        return [result]
+
+    def fake_rerank(**kwargs):
+        calls["rerank"].append(kwargs)
+        return [result]
+
+    def fake_hybrid(**kwargs):
+        calls["hybrid"].append(kwargs)
+        return [result]
+
+    def fake_generate(*args, **kwargs):
+        calls["generate"].append((args, kwargs))
+        return "linear squares"
 
     monkeypatch.setattr(evaluate_rag, "evaluation_queries_path", queries_path)
     monkeypatch.setattr(evaluate_rag, "eval_results_directory", tmp_path / "configured_results")
@@ -160,15 +195,36 @@ def _patch_fast_evaluation(monkeypatch, tmp_path):
     monkeypatch.setattr(evaluate_rag, "get_or_create_collection", lambda client, name: object())
     monkeypatch.setattr(evaluate_rag, "get_bm25_index", lambda **kwargs: FakeBM25Index())
     monkeypatch.setattr(evaluate_rag, "load_chunk_records", lambda path: FakeBM25Index.records)
-    monkeypatch.setattr(evaluate_rag, "retrieve_relevant_chunks", lambda **kwargs: [result])
-    monkeypatch.setattr(evaluate_rag, "rerank_results", lambda **kwargs: [result])
-    monkeypatch.setattr(evaluate_rag, "hybrid_retrieve", lambda **kwargs: [result])
-    monkeypatch.setattr(evaluate_rag, "generate_answer", lambda *args, **kwargs: "linear squares")
+    monkeypatch.setattr(evaluate_rag, "retrieve_relevant_chunks", fake_retrieve)
+    monkeypatch.setattr(evaluate_rag, "rerank_results", fake_rerank)
+    monkeypatch.setattr(evaluate_rag, "hybrid_retrieve", fake_hybrid)
+    monkeypatch.setattr(evaluate_rag, "generate_answer", fake_generate)
     monkeypatch.setattr(
         evaluate_rag,
         "get_git_metadata",
         lambda: {"branch": "test-branch", "commit": "abc123", "dirty": False},
     )
+    return calls
+
+
+def _mixed_queries():
+    return [
+        {
+            "id": "semantic_first",
+            "query": "What is least squares?",
+            "expected_keywords": ["linear", "squares"],
+        },
+        {
+            "id": "lexical_exact_term",
+            "query": "Define RSS.",
+            "expected_keywords": ["linear", "squares"],
+        },
+        {
+            "id": "semantic_second",
+            "query": "What is supervised learning?",
+            "expected_keywords": ["linear", "squares"],
+        },
+    ]
 
 
 def test_default_run_saves_artifact_to_configured_results_dir(tmp_path, monkeypatch):
@@ -182,14 +238,149 @@ def test_default_run_saves_artifact_to_configured_results_dir(tmp_path, monkeypa
     assert artifact["run_id"] == saved["run_id"]
     assert saved["schema_version"] == "1.0"
     assert saved["git"] == {"branch": "test-branch", "commit": "abc123", "dirty": False}
+    assert saved["run_options"] == {
+        "mode": "full",
+        "limit": None,
+        "group": None,
+        "pipelines": ["dense", "dense_reranker", "hybrid", "hybrid_reranker"],
+    }
+    assert saved["timing"]["started_at"]
+    assert saved["timing"]["finished_at"]
+    assert saved["timing"]["total_seconds"] >= 0.0
     assert saved["config"]["embedding_model"] == "qwen3-embedding:4b"
     assert saved["config"]["generation_model"] == "qwen3.6:27b"
     assert saved["config"]["reranker_model"] == "mixedbread-ai/mxbai-rerank-base-v1"
     assert saved["summary"]["all"]["query_count"] == 1
     assert saved["summary"]["groups"]["semantic"]["query_count"] == 1
     assert saved["queries"][0]["pipeline"] == "Dense Baseline"
+    assert saved["queries"][0]["generation_score"] == 1.0
+    assert saved["queries"][0]["retrieval_seconds"] >= 0.0
+    assert saved["queries"][0]["generation_seconds"] >= 0.0
+    assert saved["queries"][0]["total_seconds"] >= 0.0
     assert saved["queries"][0]["top_chunk_ids"] == ["chunk_linear"]
     assert saved["queries"][0]["top_sources"][0]["file_name"] == "lecture.pdf"
+
+
+def test_retrieval_mode_skips_generation_and_writes_null_generation_scores(tmp_path, monkeypatch):
+    _patch_fast_evaluation(monkeypatch, tmp_path)
+
+    def fail_generate(*args, **kwargs):
+        raise AssertionError("generation should not run in retrieval mode")
+
+    monkeypatch.setattr(evaluate_rag, "generate_answer", fail_generate)
+
+    artifact = evaluate_rag.run_evaluation(mode="retrieval", save_results=False)
+
+    assert artifact["run_options"]["mode"] == "retrieval"
+    assert {record["generation_score"] for record in artifact["queries"]} == {None}
+    assert {record["generation_seconds"] for record in artifact["queries"]} == {0.0}
+    assert artifact["summary"]["all"]["pipelines"]["Dense Baseline"]["generation"] is None
+    assert artifact["timing"]["pipelines"]["Dense Baseline"]["generation_seconds"] == 0.0
+
+
+def test_full_mode_calls_generation(tmp_path, monkeypatch):
+    calls = _patch_fast_evaluation(monkeypatch, tmp_path)
+
+    artifact = evaluate_rag.run_evaluation(mode="full", save_results=False)
+
+    assert artifact["run_options"]["mode"] == "full"
+    assert len(calls["generate"]) == 4
+    assert artifact["queries"][0]["generation_score"] == 1.0
+    assert artifact["queries"][0]["generation_seconds"] >= 0.0
+
+
+def test_limit_filters_queries_after_group_filtering(tmp_path, monkeypatch):
+    _patch_fast_evaluation(monkeypatch, tmp_path, queries=_mixed_queries())
+
+    artifact = evaluate_rag.run_evaluation(limit=2, save_results=False)
+
+    assert artifact["run_options"]["limit"] == 2
+    assert {record["query_id"] for record in artifact["queries"]} == {
+        "semantic_first",
+        "lexical_exact_term",
+    }
+    assert artifact["summary"]["all"]["query_count"] == 2
+
+
+def test_group_semantic_filters_queries(tmp_path, monkeypatch):
+    _patch_fast_evaluation(monkeypatch, tmp_path, queries=_mixed_queries())
+
+    artifact = evaluate_rag.run_evaluation(group="semantic", save_results=False)
+
+    assert artifact["run_options"]["group"] == "semantic"
+    assert {record["query_id"] for record in artifact["queries"]} == {
+        "semantic_first",
+        "semantic_second",
+    }
+    assert {record["group"] for record in artifact["queries"]} == {"semantic"}
+    assert artifact["summary"]["all"]["query_count"] == 2
+
+
+def test_group_lexical_filters_queries(tmp_path, monkeypatch):
+    _patch_fast_evaluation(monkeypatch, tmp_path, queries=_mixed_queries())
+
+    artifact = evaluate_rag.run_evaluation(group="lexical", save_results=False)
+
+    assert artifact["run_options"]["group"] == "lexical"
+    assert {record["query_id"] for record in artifact["queries"]} == {"lexical_exact_term"}
+    assert {record["group"] for record in artifact["queries"]} == {"lexical"}
+    assert artifact["summary"]["all"]["query_count"] == 1
+
+
+def test_single_pipeline_filter_runs_only_hybrid(tmp_path, monkeypatch):
+    calls = _patch_fast_evaluation(monkeypatch, tmp_path)
+
+    artifact = evaluate_rag.run_evaluation(pipelines="hybrid", save_results=False)
+
+    assert artifact["run_options"]["pipelines"] == ["hybrid"]
+    assert artifact["pipelines"] == ["Hybrid"]
+    assert {record["pipeline"] for record in artifact["queries"]} == {"Hybrid"}
+    assert calls["retrieve"] == []
+    assert calls["rerank"] == []
+    assert len(calls["hybrid"]) == 1
+
+
+def test_multiple_pipeline_filter_runs_only_requested_pipelines(tmp_path, monkeypatch):
+    calls = _patch_fast_evaluation(monkeypatch, tmp_path)
+
+    artifact = evaluate_rag.run_evaluation(
+        mode="retrieval",
+        pipelines="hybrid,hybrid_reranker",
+        save_results=False,
+    )
+
+    assert artifact["run_options"]["pipelines"] == ["hybrid", "hybrid_reranker"]
+    assert artifact["pipelines"] == ["Hybrid", "Hybrid + Reranker"]
+    assert {record["pipeline"] for record in artifact["queries"]} == {
+        "Hybrid",
+        "Hybrid + Reranker",
+    }
+    assert calls["retrieve"] == []
+    assert len(calls["hybrid"]) == 2
+    assert len(calls["rerank"]) == 1
+    assert calls["generate"] == []
+
+
+def test_invalid_pipeline_key_fails_clearly():
+    with pytest.raises(Exception, match="Invalid pipeline key"):
+        evaluate_rag.parse_pipeline_keys("hybrid,unknown")
+
+
+def test_timing_metadata_includes_run_pipeline_and_query_levels(tmp_path, monkeypatch):
+    _patch_fast_evaluation(monkeypatch, tmp_path)
+
+    artifact = evaluate_rag.run_evaluation(mode="retrieval", pipelines="hybrid", save_results=False)
+
+    assert artifact["timing"]["started_at"]
+    assert artifact["timing"]["finished_at"]
+    assert artifact["timing"]["total_seconds"] >= 0.0
+    assert artifact["timing"]["pipelines"]["Hybrid"]["query_count"] == 1
+    assert artifact["timing"]["pipelines"]["Hybrid"]["retrieval_seconds"] >= 0.0
+    assert artifact["timing"]["pipelines"]["Hybrid"]["generation_seconds"] == 0.0
+    assert artifact["timing"]["pipelines"]["Hybrid"]["total_seconds"] >= 0.0
+    assert artifact["queries"][0]["retrieval_seconds"] >= 0.0
+    assert artifact["queries"][0]["generation_seconds"] == 0.0
+    assert artifact["queries"][0]["total_seconds"] >= 0.0
 
 
 def test_no_save_results_does_not_write_artifact(tmp_path, monkeypatch):
