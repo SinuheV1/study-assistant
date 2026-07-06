@@ -202,6 +202,7 @@ This enables page-aware textbook citations such as:
 
 ```text
 ISLP_chapter_2.pdf, K -Nearest Neighbors, pages 22-23
+```
 
 ---
 
@@ -315,12 +316,14 @@ python -m scripts.run_query_pipeline \
 
 ### Recommended Retrieval Modes
 
-| Use Case | Recommended Mode |
-|---|---|
-| Broad conceptual questions | Dense retrieval |
-| Exact technical terms / formulas / section names | Hybrid retrieval |
-| Retrieval experiments | Hybrid and reranker modes |
-| Current default | Dense retrieval |
+
+| Use Case                                         | Recommended Mode                                                                |
+| ------------------------------------------------ | ------------------------------------------------------------------------------- |
+| Fast baseline retrieval                          | Dense retrieval                                                                 |
+| Exact technical terms / formulas / section names | Hybrid retrieval                                                                |
+| Best evaluated quality                           | Hybrid + Reranker                                                               |
+| Retrieval debugging / experiments                | Compare Dense, Hybrid, and Hybrid + Reranker                                    |
+| Current practical default                        | Hybrid retrieval, with reranker optional when quality matters more than latency |
 
 ---
 
@@ -435,39 +438,55 @@ Metrics measured:
 ---
 ### Current Evaluation Results
 
+Latest local evaluation run:
+
+```text
+Date: 2026-07-05
+Command: python -m scripts.evaluate_rag
+Queries: 28 total, grouped into 14 semantic and 14 lexical / hybrid queries
+Embedding model: qwen3-embedding:4b
+Generation model: qwen3.6:27b
+Reranker: mixedbread-ai/mxbai-rerank-base-v1
+Metric: keyword coverage over expected retrieval/generation terms
+```
+
+> Note: These results replace earlier README tables produced before the shared config migration. Older reranker results are not directly comparable because the project previously used a different reranker/model configuration.
+
 #### All Queries
 
-| Pipeline | Retrieval | Generation |
-|---|---:|---:|
-| Dense Baseline | 0.87 | 0.76 |
-| Dense + Reranker | 0.87 | 0.70 |
-| Hybrid | 0.87 | 0.78 |
-| Hybrid + Reranker | 0.86 | 0.75 |
+| Pipeline          | Retrieval | Generation |
+| ----------------- | --------: | ---------: |
+| Dense Baseline    |      0.21 |       0.27 |
+| Dense + Reranker  |      0.19 |       0.27 |
+| Hybrid            |      0.65 |       0.59 |
+| Hybrid + Reranker |      0.81 |       0.75 |
 
 #### Semantic Queries
 
-| Pipeline | Retrieval | Generation |
-|---|---:|---:|
-| Dense Baseline | 0.78 | 0.70 |
-| Dense + Reranker | 0.78 | 0.62 |
-| Hybrid | 0.74 | 0.71 |
-| Hybrid + Reranker | 0.76 | 0.67 |
+| Pipeline          | Retrieval | Generation |
+| ----------------- | --------: | ---------: |
+| Dense Baseline    |      0.27 |       0.15 |
+| Dense + Reranker  |      0.22 |       0.13 |
+| Hybrid            |      0.50 |       0.46 |
+| Hybrid + Reranker |      0.67 |       0.61 |
 
 #### Lexical / Hybrid Queries
 
-| Pipeline | Retrieval | Generation |
-|---|---:|---:|
-| Dense Baseline | 0.96 | 0.83 |
-| Dense + Reranker | 0.95 | 0.78 |
-| Hybrid | 1.00 | 0.84 |
-| Hybrid + Reranker | 0.95 | 0.83 |
+| Pipeline          | Retrieval | Generation |
+| ----------------- | --------: | ---------: |
+| Dense Baseline    |      0.16 |       0.39 |
+| Dense + Reranker  |      0.17 |       0.42 |
+| Hybrid            |      0.81 |       0.71 |
+| Hybrid + Reranker |      0.94 |       0.88 |
 
-Observations:
-- Dense retrieval remains the best default for broad semantic questions.
-- Hybrid retrieval improves lexical / exact technical-term retrieval.
-- Hybrid improved lexical retrieval from `0.96` to `1.00`.
-- Reranking changes top results often but does not currently improve evaluation scores.
-- Retrieval mode should remain configurable instead of forcing one global strategy.
+#### Observations
+
+* Hybrid retrieval significantly outperformed dense-only retrieval on this corpus and query set.
+* Hybrid + Reranker was the strongest overall pipeline, improving all-query retrieval from `0.21` to `0.81` and generation from `0.27` to `0.75`.
+* Dense + Reranker did not improve over Dense Baseline, which suggests reranking weak dense candidates is not enough by itself.
+* Reranking was most useful after hybrid retrieval, where the candidate pool already contained stronger lexical and semantic matches.
+* Lexical / exact-term queries benefited the most from hybrid retrieval.
+* The current evaluation metric is keyword coverage, which is useful for regression testing but limited. A future evaluation version should use a labeled gold set with rank-aware metrics such as recall@k, MRR, and nDCG.
 ---
 ## 🧪 Chunking A/B Testing
 
@@ -537,12 +556,14 @@ Benefits:
 - Transcript-style text introduces semantic noise and OCR artifacts
 - Semantic section metadata improves retrieval traceability and debugging
 - Cross-encoder rerankers can significantly reorder dense retrieval outputs
-- Better retrieval ranking does not always improve downstream generation quality
+- Hybrid retrieval significantly improved both retrieval and generation quality on the current corpus.
+- Reranking is most useful after hybrid retrieval, where the candidate pool already contains stronger matches.
+- Dense-only retrieval remains useful as a fast baseline, but it underperformed hybrid retrieval in the latest evaluation.
+- Grouped evaluation is necessary because semantic and lexical queries stress different retrieval behaviors.
+- Keyword-coverage evaluation is useful for early regression testing, but a labeled gold set with rank-aware metrics is needed for stronger retrieval claims.
 - Semantic chunk precision remains a major retrieval bottleneck
-- Dense retrieval performs best as the default semantic search baseline
 - BM25 improves retrieval for exact lecture terms, formulas, abbreviations, and section names
 - Hybrid retrieval improves lexical query performance without replacing dense retrieval
-- Reranking is useful for experimentation but is not currently beneficial as a default
 - Grouped evaluation is necessary because semantic and lexical queries stress different retrieval behaviors
 - Textbook PDFs require page-aware metadata to support trustworthy citations
 - Docling provenance is more useful than plain Markdown export for textbook retrieval
