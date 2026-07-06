@@ -514,6 +514,10 @@ python -m scripts.evaluate_rag \
   --run-name retrieval-smoke
 
 python -m scripts.evaluate_rag \
+  --results-dir evaluation/results/dev \
+  --run-name dev-eval
+
+python -m scripts.evaluate_rag \
   --mode full \
   --limit 3 \
   --pipelines hybrid \
