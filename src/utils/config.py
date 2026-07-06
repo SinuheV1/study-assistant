@@ -16,6 +16,7 @@ PATH_KEYS = {
     ("paths", "extracted_text_dir"),
     ("paths", "embeddings_dir"),
     ("paths", "evaluation_queries"),
+    ("paths", "eval_results_dir"),
     ("paths", "manifest_path"),
     ("paths", "bm25_index_dir"),
 }
@@ -23,6 +24,7 @@ PATH_KEYS = {
 ENV_OVERRIDES = {
     "RAG_PERSIST_DIR": ("paths", "persist_dir"),
     "RAG_CHUNK_DIR": ("paths", "chunk_dir"),
+    "RAG_EVAL_RESULTS_DIR": ("paths", "eval_results_dir"),
     "RAG_COLLECTION_NAME": ("vector_store", "collection_name"),
     "RAG_MANIFEST_PATH": ("paths", "manifest_path"),
     "RAG_BM25_INDEX_DIR": ("paths", "bm25_index_dir"),

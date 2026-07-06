@@ -36,6 +36,10 @@ class ConfigTest(unittest.TestCase):
             config["paths"]["bm25_index_dir"],
             PROJECT_ROOT / "data" / "processed" / "bm25_index",
         )
+        self.assertEqual(
+            config["paths"]["eval_results_dir"],
+            PROJECT_ROOT / "evaluation" / "results",
+        )
         self.assertEqual(config["models"]["embedding"], "qwen3-embedding:4b")
         self.assertEqual(config["models"]["llm"], "qwen3.6:27b")
         self.assertEqual(config["models"]["reranker"], "mixedbread-ai/mxbai-rerank-base-v1")
@@ -50,6 +54,7 @@ class ConfigTest(unittest.TestCase):
         overrides = {
             "RAG_PERSIST_DIR": "tmp/vector_store",
             "RAG_CHUNK_DIR": "/tmp/chunks",
+            "RAG_EVAL_RESULTS_DIR": "tmp/eval_results",
             "RAG_MANIFEST_PATH": "tmp/manifest.json",
             "RAG_BM25_INDEX_DIR": "tmp/bm25_index",
             "RAG_COLLECTION_NAME": "override_collection",
@@ -62,6 +67,10 @@ class ConfigTest(unittest.TestCase):
 
         self.assertEqual(config["paths"]["persist_dir"], PROJECT_ROOT / "tmp/vector_store")
         self.assertEqual(config["paths"]["chunk_dir"], Path("/tmp/chunks"))
+        self.assertEqual(
+            config["paths"]["eval_results_dir"],
+            PROJECT_ROOT / "tmp/eval_results",
+        )
         self.assertEqual(config["paths"]["manifest_path"], PROJECT_ROOT / "tmp/manifest.json")
         self.assertEqual(config["paths"]["bm25_index_dir"], PROJECT_ROOT / "tmp/bm25_index")
         self.assertEqual(config["vector_store"]["collection_name"], "override_collection")
@@ -79,6 +88,7 @@ paths:
   extracted_text_dir: relative/extracted_texts
   embeddings_dir: relative/embeddings
   evaluation_queries: evaluation/queries.json
+  eval_results_dir: evaluation/results
   manifest_path: data/ingestion_manifest.json
   bm25_index_dir: relative/bm25_index
 models:
@@ -109,6 +119,10 @@ retrieval:
         self.assertEqual(
             config["paths"]["evaluation_queries"],
             PROJECT_ROOT / "evaluation/queries.json",
+        )
+        self.assertEqual(
+            config["paths"]["eval_results_dir"],
+            PROJECT_ROOT / "evaluation/results",
         )
         self.assertEqual(
             config["paths"]["manifest_path"],

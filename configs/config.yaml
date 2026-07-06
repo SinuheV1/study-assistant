@@ -4,6 +4,7 @@ paths:
   extracted_text_dir: data/processed/extracted_texts
   embeddings_dir: data/processed/embeddings
   evaluation_queries: evaluation/queries.json
+  eval_results_dir: evaluation/results
   manifest_path: data/ingestion_manifest.json
   bm25_index_dir: data/processed/bm25_index
 
