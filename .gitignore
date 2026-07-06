@@ -23,6 +23,7 @@ venv/
 # Logs & artifacts
 artifacts/logs/
 artifacts/debug_outputs/
+artifacts/
 
 # Data
 data/raw/
@@ -32,6 +33,7 @@ data/
 
 #Evaluation results json
 evaluation/results/chunking_ab_test/*_results.json
+evaluation/
 
 #docs
 docs/
