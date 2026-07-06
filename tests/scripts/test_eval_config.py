@@ -28,6 +28,32 @@ class FakeBM25Index:
     records = [{"chunk_id": "chunk_bm25", "chunk_text": "linear squares", "metadata": {}}]
 
 
+class FakeCompletedProcess:
+    def __init__(self, stdout: str = "", returncode: int = 0):
+        self.stdout = stdout
+        self.returncode = returncode
+
+
+def fake_git_run(
+    status_stdout: str = "", status_returncode: int = 0, raise_on_status: bool = False
+):
+    def run(args, **kwargs):
+        git_args = args[1:]
+
+        if git_args == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return FakeCompletedProcess(stdout="main\n")
+        if git_args == ["rev-parse", "HEAD"]:
+            return FakeCompletedProcess(stdout="abc123\n")
+        if git_args == ["status", "--short"]:
+            if raise_on_status:
+                raise RuntimeError("git status unavailable")
+            return FakeCompletedProcess(stdout=status_stdout, returncode=status_returncode)
+
+        raise AssertionError(f"Unexpected git command: {args}")
+
+    return run
+
+
 def test_relevant_scripts_import_without_running_pipelines():
     for module_name in [
         "evaluate_rag",
@@ -194,6 +220,50 @@ def test_run_name_is_slugged_into_filename(tmp_path, monkeypatch):
 
     assert len(files) == 1
     assert artifact["run_id"].endswith("_islp-ch2")
+
+
+def test_git_metadata_clean_tree_sets_dirty_false(monkeypatch):
+    monkeypatch.setattr(evaluate_rag.subprocess, "run", fake_git_run(status_stdout=""))
+
+    assert evaluate_rag.get_git_metadata() == {
+        "branch": "main",
+        "commit": "abc123",
+        "dirty": False,
+    }
+
+
+def test_git_metadata_dirty_tree_sets_dirty_true(monkeypatch):
+    monkeypatch.setattr(evaluate_rag.subprocess, "run", fake_git_run(status_stdout=" M file.py\n"))
+
+    assert evaluate_rag.get_git_metadata() == {
+        "branch": "main",
+        "commit": "abc123",
+        "dirty": True,
+    }
+
+
+def test_git_metadata_status_failure_sets_dirty_none(monkeypatch):
+    monkeypatch.setattr(
+        evaluate_rag.subprocess,
+        "run",
+        fake_git_run(status_stdout="fatal: not a git repository\n", status_returncode=128),
+    )
+
+    assert evaluate_rag.get_git_metadata() == {
+        "branch": "main",
+        "commit": "abc123",
+        "dirty": None,
+    }
+
+
+def test_git_metadata_status_exception_sets_dirty_none(monkeypatch):
+    monkeypatch.setattr(evaluate_rag.subprocess, "run", fake_git_run(raise_on_status=True))
+
+    assert evaluate_rag.get_git_metadata() == {
+        "branch": "main",
+        "commit": "abc123",
+        "dirty": None,
+    }
 
 
 def test_git_metadata_failure_does_not_crash(monkeypatch):

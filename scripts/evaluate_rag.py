@@ -129,15 +129,33 @@ def _run_git_command(args: list[str]) -> str | None:
     return result.stdout.strip() or None
 
 
+def _get_git_dirty_status() -> bool | None:
+    try:
+        result = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except Exception:
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    return bool(result.stdout.strip())
+
+
 def get_git_metadata() -> dict:
     branch = _run_git_command(["rev-parse", "--abbrev-ref", "HEAD"])
     commit = _run_git_command(["rev-parse", "HEAD"])
-    dirty_output = _run_git_command(["status", "--short"])
 
     return {
         "branch": branch or "unknown",
         "commit": commit or "unknown",
-        "dirty": bool(dirty_output) if dirty_output is not None else None,
+        "dirty": _get_git_dirty_status(),
     }
 
 
