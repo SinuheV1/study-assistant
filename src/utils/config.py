@@ -16,12 +16,14 @@ PATH_KEYS = {
     ("paths", "extracted_text_dir"),
     ("paths", "embeddings_dir"),
     ("paths", "evaluation_queries"),
+    ("paths", "manifest_path"),
 }
 
 ENV_OVERRIDES = {
     "RAG_PERSIST_DIR": ("paths", "persist_dir"),
     "RAG_CHUNK_DIR": ("paths", "chunk_dir"),
     "RAG_COLLECTION_NAME": ("vector_store", "collection_name"),
+    "RAG_MANIFEST_PATH": ("paths", "manifest_path"),
     "RAG_EMBEDDING_MODEL": ("models", "embedding"),
     "RAG_RERANKER_MODEL": ("models", "reranker"),
 }

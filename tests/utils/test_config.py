@@ -28,6 +28,10 @@ class ConfigTest(unittest.TestCase):
             config["paths"]["chunk_dir"],
             PROJECT_ROOT / processed_dir / "chunks",
         )
+        self.assertEqual(
+            config["paths"]["manifest_path"],
+            PROJECT_ROOT / "data" / "ingestion_manifest.json",
+        )
         self.assertEqual(config["models"]["embedding"], "qwen3-embedding:4b")
         self.assertEqual(config["models"]["llm"], "qwen3.6:27b")
         self.assertEqual(config["models"]["reranker"], "mixedbread-ai/mxbai-rerank-base-v1")
@@ -42,6 +46,7 @@ class ConfigTest(unittest.TestCase):
         overrides = {
             "RAG_PERSIST_DIR": "tmp/vector_store",
             "RAG_CHUNK_DIR": "/tmp/chunks",
+            "RAG_MANIFEST_PATH": "tmp/manifest.json",
             "RAG_COLLECTION_NAME": "override_collection",
             "RAG_EMBEDDING_MODEL": "override_embedding",
             "RAG_RERANKER_MODEL": "override_reranker",
@@ -52,6 +57,7 @@ class ConfigTest(unittest.TestCase):
 
         self.assertEqual(config["paths"]["persist_dir"], PROJECT_ROOT / "tmp/vector_store")
         self.assertEqual(config["paths"]["chunk_dir"], Path("/tmp/chunks"))
+        self.assertEqual(config["paths"]["manifest_path"], PROJECT_ROOT / "tmp/manifest.json")
         self.assertEqual(config["vector_store"]["collection_name"], "override_collection")
         self.assertEqual(config["models"]["embedding"], "override_embedding")
         self.assertEqual(config["models"]["reranker"], "override_reranker")
@@ -67,6 +73,7 @@ paths:
   extracted_text_dir: relative/extracted_texts
   embeddings_dir: relative/embeddings
   evaluation_queries: evaluation/queries.json
+  manifest_path: data/ingestion_manifest.json
 models:
   embedding: qwen3-embedding:4b
   llm: qwen3.6:27b
@@ -95,6 +102,10 @@ retrieval:
         self.assertEqual(
             config["paths"]["evaluation_queries"],
             PROJECT_ROOT / "evaluation/queries.json",
+        )
+        self.assertEqual(
+            config["paths"]["manifest_path"],
+            PROJECT_ROOT / "data/ingestion_manifest.json",
         )
 
     def test_load_config_missing_file_error(self):

@@ -6,11 +6,20 @@ from src.chunking.chunker import chunk_document
 from src.embedding.embedder import embed_chunks
 from src.ingestion.ingest_docling_document import ingest_docling_document
 from src.ingestion.ingest_text import ingest_text_document
+from src.ingestion.manifest import (
+    compute_file_hash,
+    create_empty_manifest,
+    is_file_unchanged,
+    load_manifest,
+    save_manifest,
+    update_manifest_record,
+)
 from src.utils.config import load_config
 from src.utils.io import save_extracted_text, save_json
 from src.utils.logging import setup_logger
 from src.vector_store.vectordb import (
     add_records_to_collection,
+    delete_by_document_id,
     get_collection_count,
     get_or_create_collection,
     initialize_vector_db,
@@ -31,6 +40,7 @@ extracted_text_dir = config["paths"]["extracted_text_dir"]
 chunks_dir = config["paths"]["chunk_dir"]
 embeddings_dir = config["paths"]["embeddings_dir"]
 SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md"}
+manifest_path = config["paths"]["manifest_path"]
 
 
 def parse_args():
@@ -43,6 +53,11 @@ def parse_args():
         "--dir", help="Path to directory to ingest all supported files (.pdf, .txt, .md)"
     )
     parser.add_argument(
+        "--force-reingest",
+        action="store_true",
+        help="Reprocess files even when the manifest says they are unchanged.",
+    )
+    parser.add_argument(
         "--recursive",
         action="store_true",
         help="Scan nested directories for .pdf, .txt, .md files. Can only be used if --dir was used.",
@@ -50,7 +65,12 @@ def parse_args():
     parser.add_argument(
         "--reset-collection",
         action="store_true",
-        help="Reset the Chroma collection before ingestion. ",
+        help="Reset the Chroma collection before ingestion. Bypasses unchanged-file skipping.",
+    )
+    parser.add_argument(
+        "--reset-manifest",
+        action="store_true",
+        help="Start this run with an empty ingestion manifest.",
     )
 
     args = parser.parse_args()
@@ -160,6 +180,7 @@ def ingest_document(document: str, file_name: str, collection: str):
 
     save_json(embedded_chunks, Path(embeddings_dir) / f"{document_id}_embeddings.json")
 
+    delete_by_document_id(collection, document_id)
     add_records_to_collection(collection, embedded_chunks)
 
     vector_count = get_collection_count(collection)
@@ -172,6 +193,7 @@ def ingest_document(document: str, file_name: str, collection: str):
         "vector_db_count": vector_count,
         "status": "success",
         "error": None,
+        "metadata": metadata,
     }
     print("\n==== Document Ingestion Summary ====")
     print(f"Document ID: {result['document_id']}")
@@ -185,8 +207,44 @@ def ingest_document(document: str, file_name: str, collection: str):
     return result
 
 
-def process_one_file(file_path: str | Path, collection) -> dict[str, Any]:
+def _failure_metadata(file_path: Path) -> dict[str, Any]:
+    metadata = {
+        "document_id": None,
+        "file_name": file_path.name,
+        "file_path": file_path.as_posix(),
+        "file_size": None,
+    }
+
+    if file_path.exists() and file_path.is_file():
+        metadata["file_size"] = file_path.stat().st_size
+
+    return metadata
+
+
+def _record_manifest_outcome(
+    manifest: dict[str, Any],
+    file_path: Path,
+    file_hash: str | None,
+    result: dict[str, Any],
+) -> None:
+    update_manifest_record(
+        manifest=manifest,
+        file_path=file_path,
+        document_metadata=result.get("metadata") or _failure_metadata(file_path),
+        file_hash=file_hash or "",
+        chunks_created=result.get("chunks_created", 0),
+        status=result.get("status", "failed"),
+    )
+
+
+def process_one_file(
+    file_path: str | Path,
+    collection,
+    manifest: dict[str, Any],
+    skip_unchanged: bool = True,
+) -> dict[str, Any]:
     file_path = Path(file_path)
+    file_hash = None
 
     try:
         if not file_path.exists():
@@ -197,6 +255,19 @@ def process_one_file(file_path: str | Path, collection) -> dict[str, Any]:
 
         if not is_supported_file(file_path):
             raise ValueError(f"Unsupported file type: {file_path.name}")
+
+        file_hash = compute_file_hash(file_path)
+
+        if skip_unchanged and is_file_unchanged(manifest, file_path, file_hash):
+            return {
+                "file_path": str(file_path),
+                "file_name": file_path.name,
+                "document_id": None,
+                "chunks_created": 0,
+                "embeddings_created": 0,
+                "status": "skipped",
+                "error": None,
+            }
 
         log.info(f"Ingesting file: {file_path}")
 
@@ -209,7 +280,7 @@ def process_one_file(file_path: str | Path, collection) -> dict[str, Any]:
         )
 
         if result is None:
-            return {
+            result = {
                 "file_path": str(file_path),
                 "file_name": file_path.name,
                 "document_id": None,
@@ -218,14 +289,17 @@ def process_one_file(file_path: str | Path, collection) -> dict[str, Any]:
                 "status": "failed",
                 "error": "Ingestion returned None.",
             }
+            _record_manifest_outcome(manifest, file_path, file_hash, result)
+            return result
 
         result["file_path"] = str(file_path)
+        _record_manifest_outcome(manifest, file_path, file_hash, result)
         return result
 
     except Exception as e:
         log.exception(f"Failed to ingest file: {file_path}. Reason: {e}")
 
-        return {
+        result = {
             "file_path": str(file_path),
             "file_name": file_path.name,
             "document_id": None,
@@ -234,10 +308,13 @@ def process_one_file(file_path: str | Path, collection) -> dict[str, Any]:
             "status": "failed",
             "error": str(e),
         }
+        _record_manifest_outcome(manifest, file_path, file_hash, result)
+        return result
 
 
 def print_batch_summary(results: list[dict[str, Any]], collection) -> None:
     processed = [result for result in results if result.get("status") == "success"]
+    skipped = [result for result in results if result.get("status") == "skipped"]
     failed = [result for result in results if result.get("status") == "failed"]
 
     total_chunks = sum(result.get("chunks_created", 0) for result in processed)
@@ -250,10 +327,16 @@ def print_batch_summary(results: list[dict[str, Any]], collection) -> None:
     print("==============================")
     print(f"Files attempted: {len(results)}")
     print(f"Processed: {len(processed)}")
+    print(f"Skipped: {len(skipped)}")
     print(f"Failed: {len(failed)}")
     print(f"Chunks created: {total_chunks}")
     print(f"Embeddings created: {total_embeddings}")
     print(f"Vector DB count: {vector_count}")
+
+    if skipped:
+        print("\nSkipped unchanged files:")
+        for result in skipped:
+            print(f"- {result.get('file_path')}")
 
     if failed:
         print("\nFailures:")
@@ -263,6 +346,14 @@ def print_batch_summary(results: list[dict[str, Any]], collection) -> None:
 
 def main():
     args = parse_args()
+    if args.reset_manifest:
+        manifest = create_empty_manifest()
+    else:
+        manifest = load_manifest(manifest_path)
+
+    skip_unchanged = not (args.force_reingest or args.reset_collection)
+    if args.reset_collection and not args.force_reingest:
+        log.info("Reset collection requested; unchanged-file skip logic is disabled for this run.")
 
     collection = load_vectordb_collection(reset=args.reset_collection)
 
@@ -313,10 +404,14 @@ def main():
         result = process_one_file(
             file_path=file_path,
             collection=collection,
+            manifest=manifest,
+            skip_unchanged=skip_unchanged,
         )
         results.append(result)
+        save_manifest(manifest, manifest_path)
 
     print_batch_summary(results, collection)
+    save_manifest(manifest, manifest_path)
 
     log.info("Ingestion pipeline run completed.")
 
